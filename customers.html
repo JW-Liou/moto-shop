@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>客戶查詢 - 車行管理系統</title>
+  <link rel="stylesheet" href="style.css">
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="config.js"></script>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">車行<span>管理系統</span></div>
+    <div class="user">
+      <button class="btn-ghost" onclick="location.href='app.html'">回系統</button>
+    </div>
+  </header>
+
+  <main class="container">
+    <section class="card">
+      <h2>客戶查詢</h2>
+      <div class="search">
+        <input id="q" placeholder="輸入電話、車牌或姓名"
+               onkeydown="if (event.key === 'Enter') searchCustomer()">
+        <button class="btn" onclick="searchCustomer()">查詢</button>
+      </div>
+      <p class="msg" id="msg"></p>
+    </section>
+
+    <div id="results"></div>
+  </main>
+
+  <script>
+    let customers = null; // 第一次查詢時從資料庫讀進來，之後直接用
+
+    // 小工具：建立一個元素，順便設定 class 和文字
+    function el(tag, className, text) {
+      const e = document.createElement(tag);
+      if (className) e.className = className;
+      if (text !== undefined) e.textContent = text;
+      return e;
+    }
+
+    // 車牌統一格式：去掉空白和 -，全部轉大寫
+    function normalizePlate(text) {
+      return text.toUpperCase().replace(/[^A-Z0-9]/g, "");
+    }
+
+    // 電話只留數字，0912-345-678 和 0912345678 才會被當成同一支
+    function phoneDigits(phone) {
+      return (phone || "").replace(/\D/g, "");
+    }
+
+    // 讀出所有客戶，連同他們的車和每台車的工單
+    async function loadCustomers() {
+      const { data, error } = await db
+        .from("customers")
+        .select("*, bikes(id, plate, model, mileage, service_records(date, total))");
+      if (error) {
+        alert("讀取客戶失敗：" + error.message);
+        return null;
+      }
+      return data;
+    }
+
+    async function searchCustomer() {
+      const q = document.getElementById("q").value.trim();
+      const msg = document.getElementById("msg");
+      const results = document.getElementById("results");
+      results.innerHTML = "";
+      if (!q) {
+        msg.textContent = "請輸入電話、車牌或姓名";
+        return;
+      }
+
+      msg.textContent = "查詢中...";
+      if (!customers) customers = await loadCustomers();
+      if (!customers) return;
+
+      // 判斷輸入的是什麼：
+      // 有英文字母 → 車牌；只有數字和 - → 電話；其他（中文）→ 姓名
+      let mode, matches;
+      if (/[A-Za-z]/.test(q)) {
+        mode = "車牌";
+        const key = normalizePlate(q);
+        matches = customers.filter(c => c.bikes.some(b => b.plate.includes(key)));
+      } else if (/^[\d\s\-()+]+$/.test(q)) {
+        mode = "電話";
+        const key = phoneDigits(q);
+        matches = customers.filter(c => phoneDigits(c.phone).includes(key));
+      } else {
+        mode = "姓名";
+        matches = customers.filter(c => (c.name || "").includes(q));
+      }
+
+      msg.textContent = matches.length
+        ? `用${mode}找到 ${matches.length} 位客戶`
+        : `用${mode}找不到客戶`;
+      matches.forEach(c => results.appendChild(customerCard(c)));
+
+      // 用車牌查詢時，順便找「還沒登記車主」的車
+      if (mode === "車牌") {
+        const { data: noOwner } = await db
+          .from("bikes")
+          .select("plate, model")
+          .is("customer_id", null)
+          .ilike("plate", `%${normalizePlate(q)}%`);
+        if (noOwner && noOwner.length) results.appendChild(noOwnerCard(noOwner));
+      }
+    }
+
+    // 一位客戶的卡片：基本資料、統計、名下所有車
+    function customerCard(c) {
+      const card = el("section", "card");
+
+      const head = el("div", "customer-head");
+      head.append(el("span", "name", c.name || "未填姓名"), el("span", "phone", c.phone || "沒有電話"));
+
+      // 統計：幾台車、來店幾次、累計消費、最後一次來
+      const records = c.bikes.flatMap(b => b.service_records || []);
+      const spend = records.reduce((sum, r) => sum + (r.total || 0), 0);
+      const dates = records.map(r => r.date).filter(Boolean).sort();
+      const stats = el("div", "mini-stats");
+      stats.append(
+        statItem("車輛", `${c.bikes.length} 台`),
+        statItem("來店", `${records.length} 次`),
+        statItem("累計消費", `$${spend.toLocaleString()}`),
+        statItem("上次來店", dates.length ? dates[dates.length - 1] : "-")
+      );
+
+      const list = el("ul", "list");
+      if (c.bikes.length === 0) list.appendChild(el("li", "empty", "名下還沒有車"));
+      c.bikes.forEach(b => {
+        const bDates = (b.service_records || []).map(r => r.date).filter(Boolean).sort();
+        const main = el("div", "main");
+        main.append(
+          el("div", "", b.model || "未填車型"),
+          el("div", "sub",
+            `里程 ${b.mileage ? b.mileage.toLocaleString() : "-"} 公里｜來店 ${(b.service_records || []).length} 次｜上次 ${bDates.length ? bDates[bDates.length - 1] : "-"}`)
+        );
+        const li = el("li");
+        li.append(el("span", "plate", b.plate), main, openButton(b.plate));
+        list.appendChild(li);
+      });
+
+      card.append(head, stats, el("h3", "", "名下車輛"), list);
+      return card;
+    }
+
+    function statItem(label, value) {
+      const span = el("span", "", label + " ");
+      span.appendChild(el("b", "", value));
+      return span;
+    }
+
+    // 沒登記車主的車：提示可以去登記
+    function noOwnerCard(bikes) {
+      const card = el("section", "card");
+      card.append(
+        el("h2", "", "還沒登記車主的車"),
+        el("p", "info", "打開後，在車輛資料下方的「登記／修改車主」填上電話，就會連到客戶。")
+      );
+      const list = el("ul", "list");
+      bikes.forEach(b => {
+        const li = el("li");
+        li.append(el("span", "plate", b.plate), el("div", "main sub", b.model || "未填車型"), openButton(b.plate));
+        list.appendChild(li);
+      });
+      card.appendChild(list);
+      return card;
+    }
+
+    function openButton(plate) {
+      const btn = el("button", "btn-small", "打開");
+      btn.onclick = () => location.href = "app.html?plate=" + encodeURIComponent(plate);
+      return btn;
+    }
+
+    // 沒登入就送回登入頁
+    async function checkLogin() {
+      const { data } = await db.auth.getSession();
+      if (!data.session) location.href = "index.html";
+    }
+
+    checkLogin();
+  </script>
+</body>
+</html>

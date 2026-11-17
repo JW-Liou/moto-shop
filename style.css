@@ -207,3 +207,13 @@ button {
   .user { flex-wrap: wrap; gap: 6px; }
   #who { display: none; }
 }
+
+/* ===== 客戶查詢、登記車主 ===== */
+details.owner-edit { margin-top: 12px; }
+details.owner-edit summary { cursor: pointer; color: var(--accent-dark); font-weight: 600; font-size: 14px; }
+details.owner-edit .form-grid { margin-top: 10px; }
+.customer-head { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+.customer-head .name { font-size: 20px; font-weight: 700; }
+.customer-head .phone { color: var(--muted); }
+.mini-stats { display: flex; gap: 16px; flex-wrap: wrap; color: var(--muted); font-size: 14px; margin: 8px 0 0; }
+.mini-stats b { color: var(--text); }

@@ -14,6 +14,7 @@
     <div class="brand">竹北榮詮<span>管理系統</span></div>
     <div class="user">
       <span id="who"></span>
+      <button class="btn-ghost" onclick="location.href='customers.html'">客戶查詢</button>
       <button class="btn-ghost" onclick="location.href='bikes.html'">車輛總覽</button>
       <button class="btn-ghost" onclick="location.href='import.html'">匯入 Excel</button>
       <button class="btn-ghost" onclick="logout()">登出</button>
@@ -60,6 +61,18 @@
       <section class="card" id="bikeBox" hidden>
         <div class="bike-head" id="bikeTitle"></div>
         <p class="info" id="bikeInfo"></p>
+
+        <!-- 登記／修改車主：填同一支電話，多台車就會連到同一位客戶 -->
+        <details class="owner-edit">
+          <summary>登記／修改車主</summary>
+          <div class="form-grid">
+            <label>姓名<input id="editOwnerName"></label>
+            <label>電話<input id="editOwnerPhone" placeholder="已經有的客戶，打電話就會連起來"></label>
+          </div>
+          <div class="form-actions">
+            <button class="btn-small" onclick="setOwner()">儲存車主</button>
+          </div>
+        </details>
 
         <h3>新增工單</h3>
         <div class="form-grid">
@@ -256,6 +269,57 @@
       window.scrollTo(0, 0);
     }
 
+    // 用電話找現有客戶，找不到才新增
+    // 這樣同一位客戶的多台車，會連到同一筆客戶資料
+    async function findOrCreateCustomer(name, phone) {
+      const digits = phone.replace(/\D/g, "");
+      if (digits) {
+        const { data: all, error } = await db.from("customers").select("id, name, phone");
+        if (error) {
+          alert("查詢客戶失敗：" + error.message);
+          return null;
+        }
+        const found = all.find(c => (c.phone || "").replace(/\D/g, "") === digits);
+        if (found) {
+          if (name && found.name === "未填姓名") {
+            await db.from("customers").update({ name }).eq("id", found.id); // 補上姓名
+          } else if (name && name !== found.name) {
+            alert(`電話 ${phone} 已經是「${found.name}」的，這台車會登記在他名下。`);
+          }
+          return found.id;
+        }
+      }
+      const { data, error } = await db
+        .from("customers")
+        .insert({ name: name || "未填姓名", phone })
+        .select()
+        .single();
+      if (error) {
+        alert("建立車主失敗：" + error.message);
+        return null;
+      }
+      return data.id;
+    }
+
+    // 幫目前這台車登記或更換車主
+    async function setOwner() {
+      const name = document.getElementById("editOwnerName").value.trim();
+      const phone = document.getElementById("editOwnerPhone").value.trim();
+      if (!name && !phone) {
+        alert("請輸入車主姓名或電話");
+        return;
+      }
+      const customerId = await findOrCreateCustomer(name, phone);
+      if (!customerId) return;
+
+      const { error } = await db.from("bikes").update({ customer_id: customerId }).eq("id", currentBike.id);
+      if (error) {
+        alert("儲存車主失敗：" + error.message);
+        return;
+      }
+      searchPlate(); // 重新讀一次，畫面上的車主就會更新
+    }
+
     // 新車建檔：有填車主就順便建立客戶
     async function createBike() {
       const plate = document.getElementById("newPlate").textContent;
@@ -263,17 +327,10 @@
       const ownerPhone = document.getElementById("ownerPhone").value.trim();
       let customerId = null;
 
+      // 有填車主：電話已經存在就用那位客戶，沒有才新增
       if (ownerName || ownerPhone) {
-        const { data, error } = await db
-          .from("customers")
-          .insert({ name: ownerName || "未填姓名", phone: ownerPhone })
-          .select()
-          .single();
-        if (error) {
-          alert("建立車主失敗：" + error.message);
-          return;
-        }
-        customerId = data.id;
+        customerId = await findOrCreateCustomer(ownerName, ownerPhone);
+        if (!customerId) return;
       }
 
       const { error } = await db.from("bikes").insert({
@@ -307,6 +364,10 @@
         : "未登記車主";
       document.getElementById("bikeInfo").textContent =
         `車主：${owner}｜年份：${b.year || "-"}｜目前里程：${b.mileage ?? "-"} 公里`;
+      // 把目前的車主帶進「登記／修改車主」表單
+      document.getElementById("editOwnerName").value = b.customers ? b.customers.name : "";
+      document.getElementById("editOwnerPhone").value = b.customers ? b.customers.phone || "" : "";
+
       document.getElementById("rDate").value = today();
       document.getElementById("bikeBox").hidden = false;
       loadRecords();
