@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>車行管理系統 - 登入</title>
+  <link rel="stylesheet" href="style.css">
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="config.js"></script>
+</head>
+<body>
+  <div class="card login-box">
+    <div class="brand">車行<span>管理系統</span></div>
+    <label>Email<input type="email" id="email"></label>
+    <label>密碼
+      <input type="password" id="password"
+             onkeydown="if (event.key === 'Enter') login()">
+    </label>
+    <button class="btn" onclick="login()">登入</button>
+    <p class="msg" id="msg"></p>
+  </div>
+
+  <script>
+    async function login() {
+      const email = document.getElementById("email").value;
+      const password = document.getElementById("password").value;
+      document.getElementById("msg").textContent = "登入中...";
+
+      const { error } = await db.auth.signInWithPassword({ email, password });
+      if (error) {
+        document.getElementById("msg").textContent = "登入失敗：" + error.message;
+        return;
+      }
+      location.href = "app.html"; // 成功就進入系統
+    }
+  </script>
+</body>
+</html>

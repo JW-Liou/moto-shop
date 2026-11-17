@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>匯入 Excel - 車行管理系統</title>
+  <link rel="stylesheet" href="style.css">
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+  <script src="config.js"></script>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">車行<span>管理系統</span></div>
+    <div class="user">
+      <button class="btn-ghost" onclick="location.href='app.html'">回系統</button>
+    </div>
+  </header>
+
+  <main class="container">
+    <section class="card">
+      <h2>匯入 Excel 紀錄</h2>
+      <p class="info">
+        可以一次選很多個檔案。<b>檔名要是車牌</b>（例如 ABC-1234.xlsx），格式就是店裡的保養表：
+        「日期」、「本次里程」，後面的機油、齒輪油、空濾、火星塞等欄位都會自動當成保養項目。
+      </p>
+      <div class="form-actions">
+        <input type="file" id="files" multiple accept=".xlsx,.xls" onchange="readFiles()">
+      </div>
+      <p class="msg" id="msg"></p>
+    </section>
+
+    <section class="card" id="previewBox" hidden>
+      <h2>預覽</h2>
+      <p class="info" id="summary"></p>
+      <div id="preview"></div>
+      <div class="form-actions">
+        <button class="btn" id="importBtn" onclick="doImport()">確認匯入</button>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    let parsed = []; // 讀出來的資料：[{ fileName, plate, records: [...] }]
+
+    // 小工具：建立一個元素，順便設定 class 和文字
+    function el(tag, className, text) {
+      const e = document.createElement(tag);
+      if (className) e.className = className;
+      if (text !== undefined) e.textContent = text;
+      return e;
+    }
+
+    // 車牌統一格式：去掉空白和 -，全部轉大寫
+    function normalizePlate(text) {
+      return text.toUpperCase().replace(/[^A-Z0-9]/g, "");
+    }
+
+    // 把各種日期寫法轉成 2026-11-17
+    // 支援：26.11.17、2026/11/17、113/11/17（民國年）、2026年11月17日
+    function parseDate(v) {
+      if (v === null || v === undefined || v === "") return null;
+      if (v instanceof Date) return v.toLocaleDateString("sv-SE");
+      const m = String(v).match(/(\d{2,4})\s*[\/\-.年]\s*(\d{1,2})\s*[\/\-.月]\s*(\d{1,2})/);
+      if (!m) return null;
+      let y = Number(m[1]);
+      const month = Number(m[2]);
+      const day = Number(m[3]);
+      if (month < 1 || month > 12 || day < 1 || day > 31) return null;
+
+      const thisYear = new Date().getFullYear();
+      if (y < 100) {
+        // 兩位數年份：26 → 2026；如果變成未來的年份，就當作民國年（例如 98 → 2009）
+        y = 2000 + y <= thisYear + 1 ? 2000 + y : y + 1911;
+      } else if (y < 1911) {
+        y += 1911; // 民國年，例如 113 → 2024
+      }
+      return `${y}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+    }
+
+    // 里程只留數字，例如 "15,800 km" → 15800
+    function parseKm(v) {
+      const n = Number(String(v).replace(/[^\d.]/g, ""));
+      return n ? Math.round(n) : null;
+    }
+
+    // 這些符號代表「這次有做這個項目」
+    const MARKS = ["V", "✓", "✔", "O", "○", "〇", "Y", "1", "是", "有", "*"];
+
+    // 找出標題列：有「日期」或「里程」的那一行
+    // 其他有標題的欄位（機油、齒輪油、空濾、火星塞……）全部當成保養項目
+    function findLayout(rows) {
+      for (let i = 0; i < Math.min(rows.length, 10); i++) {
+        const row = rows[i].map(c => String(c).trim());
+        const km = row.findIndex(c => c.includes("里程") || c.includes("公里"));
+        const date = row.findIndex(c => c.includes("日期"));
+        if (km === -1 && date === -1) continue;
+
+        const items = [];
+        row.forEach((name, idx) => {
+          if (name && idx !== km && idx !== date) items.push({ idx, name });
+        });
+        return { headerRow: i, km, date, items };
+      }
+      return null; // 找不到標題列
+    }
+
+    // 把一行裡有填的項目組合起來，例如「機油、空濾（K&N）」
+    function rowItems(row, items) {
+      const done = [];
+      items.forEach(({ idx, name }) => {
+        const v = String(row[idx] ?? "").trim();
+        if (!v) return;                                      // 空白 = 這次沒做
+        if (/備註|其他|說明/.test(name)) done.push(v);         // 備註欄直接放內容
+        else if (MARKS.includes(v.toUpperCase())) done.push(name); // 打勾 = 有做
+        else done.push(`${name}（${v}）`);                    // 寫了字，例如品牌或規格
+      });
+      return done.join("、");
+    }
+
+    // 讀取選到的 Excel 檔
+    async function readFiles() {
+      const files = document.getElementById("files").files;
+      const msg = document.getElementById("msg");
+      parsed = [];
+      msg.textContent = "讀取中...";
+
+      for (const file of files) {
+        try {
+          const plate = normalizePlate(file.name.replace(/\.[^.]+$/, "")); // 去掉 .xlsx
+          const wb = XLSX.read(await file.arrayBuffer(), { cellDates: true });
+          const sheet = wb.Sheets[wb.SheetNames[0]]; // 只讀第一個工作表
+          const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: "" });
+          const layout = findLayout(rows);
+          if (!layout) throw new Error("找不到「日期」或「里程」的標題列");
+
+          const records = [];
+          rows.slice(layout.headerRow + 1).forEach(row => {
+            const date = layout.date >= 0 ? parseDate(row[layout.date]) : null;
+            const mileage = layout.km >= 0 ? parseKm(row[layout.km]) : null;
+            const items = rowItems(row, layout.items);
+            if (!date && !mileage && !items) return; // 空白行跳過
+            records.push({ date, mileage, items: items || "（未填項目）" });
+          });
+          parsed.push({ fileName: file.name, plate, records });
+        } catch (err) {
+          parsed.push({ fileName: file.name, plate: "", records: [], error: err.message });
+        }
+      }
+      msg.textContent = "";
+      showPreview();
+    }
+
+    // 顯示預覽，讓使用者確認
+    function showPreview() {
+      const box = document.getElementById("preview");
+      box.innerHTML = "";
+      let total = 0;
+
+      parsed.forEach(f => {
+        total += f.records.length;
+        const wrap = el("div");
+        wrap.style.marginBottom = "20px";
+
+        const head = el("div", "bike-head");
+        head.append(
+          el("span", "plate", f.plate || "無法辨識"),
+          el("span", "info", `${f.fileName}｜${f.records.length} 筆`)
+        );
+
+        const list = el("ul", "list");
+        if (f.error || !f.plate || f.records.length === 0) {
+          list.appendChild(el("li", "empty",
+            f.error ? `讀取失敗：${f.error}` :
+            !f.plate ? "檔名讀不出車牌，這個檔案會跳過" :
+            "這個檔案沒有讀到資料，請檢查欄位"));
+        }
+        f.records.slice(0, 5).forEach(r => {
+          const li = el("li");
+          const main = el("div", "main");
+          main.append(
+            el("div", "", r.items),
+            el("div", "sub", `${r.date || "日期不明"}｜${r.mileage ?? "-"} 公里`)
+          );
+          li.appendChild(main);
+          list.appendChild(li);
+        });
+        if (f.records.length > 5) {
+          list.appendChild(el("li", "empty", `…還有 ${f.records.length - 5} 筆`));
+        }
+
+        wrap.append(head, list);
+        box.appendChild(wrap);
+      });
+
+      document.getElementById("summary").textContent =
+        `共 ${parsed.length} 個檔案、${total} 筆紀錄。確認沒問題再按「確認匯入」。` +
+        `匯入的紀錄狀態都是「已完成」，金額記為 0。`;
+      document.getElementById("previewBox").hidden = false;
+    }
+
+    // 寫進資料庫
+    async function doImport() {
+      const btn = document.getElementById("importBtn");
+      const msg = document.getElementById("msg");
+      btn.disabled = true;
+      let added = 0;
+      let skipped = 0;
+
+      for (const f of parsed) {
+        if (!f.plate || f.records.length === 0) continue;
+        msg.textContent = `匯入中：${f.plate}...`;
+
+        // 1. 找這台車，沒有就建立
+        let { data: bike, error } = await db
+          .from("bikes").select("*").eq("plate", f.plate).maybeSingle();
+        if (error) {
+          alert("查詢車輛失敗：" + error.message);
+          break;
+        }
+        if (!bike) {
+          const res = await db.from("bikes").insert({ plate: f.plate }).select().single();
+          if (res.error) {
+            alert("建立車輛失敗：" + res.error.message);
+            break;
+          }
+          bike = res.data;
+        }
+
+        // 2. 已經匯入過的紀錄就跳過，避免重複
+        const { data: existing } = await db
+          .from("service_records").select("date, mileage, items").eq("bike_id", bike.id);
+        const key = r => `${r.date}|${r.mileage}|${r.items}`;
+        const seen = new Set((existing || []).map(key));
+        const newRows = f.records.filter(r => !seen.has(key(r)));
+        skipped += f.records.length - newRows.length;
+
+        if (newRows.length > 0) {
+          const { error: e2 } = await db.from("service_records").insert(
+            newRows.map(r => ({
+              bike_id: bike.id,
+              date: r.date,
+              mileage: r.mileage,
+              items: r.items,
+              status: "已完成"
+            }))
+          );
+          if (e2) {
+            alert(`${f.plate} 匯入失敗：` + e2.message);
+            break;
+          }
+          added += newRows.length;
+        }
+
+        // 3. 把車輛的目前里程更新成最大的那筆
+        const maxKm = Math.max(0, ...f.records.map(r => r.mileage || 0));
+        if (maxKm > (bike.mileage || 0)) {
+          await db.from("bikes").update({ mileage: maxKm }).eq("id", bike.id);
+        }
+      }
+
+      msg.textContent = `完成！新增 ${added} 筆紀錄` + (skipped ? `，跳過 ${skipped} 筆重複的` : "") + "。";
+      btn.disabled = false;
+    }
+
+    // 沒登入就送回登入頁
+    async function checkLogin() {
+      const { data } = await db.auth.getSession();
+      if (!data.session) location.href = "index.html";
+    }
+
+    checkLogin();
+  </script>
+</body>
+</html>

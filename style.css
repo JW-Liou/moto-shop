@@ -1,0 +1,209 @@
+/* ===== 顏色與基本設定（改這裡就能換整體配色） ===== */
+:root {
+  --bg: #f3f4f6;
+  --card: #ffffff;
+  --text: #1f2937;
+  --muted: #6b7280;
+  --border: #e5e7eb;
+  --accent: #ea580c;
+  --accent-dark: #c2410c;
+  --dark: #111827;
+  --radius: 12px;
+}
+
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+
+body {
+  margin: 0;
+  font-family: system-ui, -apple-system, "Segoe UI", "Noto Sans TC", "Microsoft JhengHei", sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  line-height: 1.5;
+}
+
+/* ===== 上方標題列 ===== */
+.topbar {
+  background: var(--dark);
+  color: #fff;
+  padding: 12px 20px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.brand { font-size: 18px; font-weight: 700; letter-spacing: 1px; }
+.brand span { color: var(--accent); }
+.user { font-size: 14px; color: #d1d5db; display: flex; align-items: center; gap: 10px; }
+
+.container { max-width: 960px; margin: 0 auto; padding: 20px 16px 40px; }
+
+/* ===== 卡片 ===== */
+.card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 20px;
+  margin-bottom: 16px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+}
+.card h2 { margin: 0 0 12px; font-size: 20px; }
+.card h3 { margin: 24px 0 10px; font-size: 15px; color: var(--muted); }
+
+/* ===== 車牌搜尋 ===== */
+.search { display: flex; gap: 8px; }
+.search input {
+  flex: 1;
+  font-size: 20px;
+  padding: 12px 14px;
+  text-transform: uppercase;
+  letter-spacing: 2px;
+}
+.msg { margin: 10px 0 0; color: var(--accent-dark); font-weight: 600; }
+.msg:empty { display: none; }
+
+/* ===== 表單 ===== */
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 12px;
+}
+label { display: flex; flex-direction: column; gap: 4px; font-size: 14px; color: var(--muted); }
+label small { color: #9ca3af; font-size: 12px; }
+input, select {
+  font: inherit;
+  color: var(--text);
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #fff;
+  width: 100%;
+}
+input:focus, select:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+.form-actions { margin-top: 16px; }
+
+/* ===== 按鈕 ===== */
+button {
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  border: none;
+  border-radius: 8px;
+  padding: 10px 18px;
+}
+.btn { background: var(--accent); color: #fff; }
+.btn:hover { background: var(--accent-dark); }
+.btn-ghost {
+  background: transparent;
+  color: inherit;
+  border: 1px solid currentColor;
+  padding: 6px 12px;
+  font-weight: 500;
+}
+.btn-small { background: var(--dark); color: #fff; padding: 6px 14px; font-size: 14px; }
+
+/* ===== 車牌樣式 ===== */
+.bike-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.plate {
+  display: inline-block;
+  background: #fff;
+  color: #000;
+  border: 2px solid #000;
+  border-radius: 6px;
+  padding: 2px 10px;
+  font-weight: 800;
+  letter-spacing: 2px;
+  font-family: ui-monospace, Consolas, monospace;
+}
+.bike-head .model { font-size: 18px; font-weight: 600; }
+.info { color: var(--muted); margin: 8px 0 0; }
+
+/* ===== 清單 ===== */
+.list { list-style: none; padding: 0; margin: 0; }
+.list li {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 12px 0;
+  border-top: 1px solid var(--border);
+}
+.list li:first-child { border-top: none; }
+.list .main { flex: 1; min-width: 180px; }
+.list .sub { color: var(--muted); font-size: 14px; }
+.list .money { font-weight: 700; }
+.list select { width: auto; padding: 6px 10px; font-weight: 700; border: none; }
+.list li.empty { color: var(--muted); display: block; }
+
+/* ===== 狀態顏色 ===== */
+.badge { display: inline-block; font-size: 13px; font-weight: 700; padding: 2px 10px; border-radius: 999px; }
+.todo  { background: #fee2e2; color: #b91c1c; }
+.doing { background: #fef3c7; color: #b45309; }
+.done  { background: #dcfce7; color: #15803d; }
+
+/* ===== 今日統計 ===== */
+.stats { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 8px; }
+.stat { background: var(--bg); border-radius: 10px; padding: 14px 16px; }
+.stat .num { font-size: 28px; font-weight: 800; }
+.stat .label { color: var(--muted); font-size: 14px; }
+
+/* ===== 登入頁 ===== */
+.login-box { max-width: 380px; margin: 80px auto; }
+.login-box .brand { color: var(--text); font-size: 24px; text-align: center; margin-bottom: 20px; }
+.login-box label { margin-bottom: 12px; }
+.login-box .btn { width: 100%; margin-top: 8px; }
+
+/* ===== 手機版 ===== */
+@media (max-width: 600px) {
+  .card { padding: 16px; }
+  .search input { font-size: 18px; }
+  .form-grid { grid-template-columns: 1fr 1fr; }
+}
+
+/* ===== 車輛總覽 ===== */
+.stats-4 { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
+.two-col { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; margin-bottom: 16px; }
+.two-col .card { margin-bottom: 0; }
+.toolbar { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.toolbar input { flex: 1; min-width: 200px; }
+.toolbar select { width: auto; }
+.rank { list-style: none; padding: 0; margin: 0; }
+.rank li { display: grid; grid-template-columns: 1fr auto; gap: 2px 8px; padding: 6px 0; }
+.rank .rank-num { color: var(--muted); font-size: 14px; }
+.rank .bar { grid-column: 1 / -1; height: 6px; background: var(--accent); border-radius: 3px; opacity: 0.8; }
+.rank li.empty { display: block; color: var(--muted); }
+/* ===== 主頁面三欄：左＝工作看板、中＝工作區、右＝其他功能 ===== */
+.layout {
+  max-width: none;
+  display: grid;
+  grid-template-columns: 1fr;
+  grid-template-areas: "main" "side" "extra";   /* 手機：由上往下排 */
+  gap: 16px;
+  align-items: start;
+}
+.layout .card { margin-bottom: 0; }
+.layout .content { grid-area: main; display: grid; gap: 16px; width: 100%; max-width: 900px; margin: 0 auto; }
+.layout .sidebar { grid-area: side; }
+.layout .extra { grid-area: extra; display: grid; gap: 16px; width: 100%; max-width: 900px; margin: 0 auto; }
+.extra .list .main { min-width: 0; }
+.placeholder { border-style: dashed; background: transparent; box-shadow: none; color: var(--muted); }
+
+/* 中等螢幕：看板在左，其他功能排到工作區下面 */
+@media (min-width: 1000px) {
+  .layout { grid-template-columns: 340px minmax(0, 1fr); grid-template-areas: "side main" "side extra"; }
+  .layout .sidebar { position: sticky; top: 16px; max-height: calc(100vh - 32px); overflow-y: auto; }
+}
+
+/* 大螢幕：三欄並排 */
+@media (min-width: 1400px) {
+  .layout { grid-template-columns: 340px minmax(0, 1fr) 300px; grid-template-areas: "side main extra"; }
+  .layout .extra { position: sticky; top: 16px; max-height: calc(100vh - 32px); overflow-y: auto; }
+}
+
+/* 手機上標題列的按鈕不要斷行，email 先藏起來 */
+.btn-ghost { white-space: nowrap; }
+@media (max-width: 600px) {
+  .user { flex-wrap: wrap; gap: 6px; }
+  #who { display: none; }
+}

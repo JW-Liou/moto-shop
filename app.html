@@ -1,0 +1,471 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>車行管理系統</title>
+  <link rel="stylesheet" href="style.css">
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="config.js"></script>
+</head>
+<body>
+  <!-- 上方標題列 -->
+  <header class="topbar">
+    <div class="brand">車行<span>管理系統</span></div>
+    <div class="user">
+      <span id="who"></span>
+      <button class="btn-ghost" onclick="location.href='bikes.html'">車輛總覽</button>
+      <button class="btn-ghost" onclick="location.href='import.html'">匯入 Excel</button>
+      <button class="btn-ghost" onclick="logout()">登出</button>
+    </div>
+  </header>
+
+  <main class="container layout">
+    <!-- 中間：工作區（查詢和車輛資料） -->
+    <div class="content">
+      <!-- 車牌查詢 -->
+      <section class="card">
+        <h2>車牌查詢</h2>
+        <div class="search">
+          <input id="plateInput" placeholder="輸入車牌，例如 ABC-1234"
+                 onkeydown="if (event.key === 'Enter') searchPlate()">
+          <button class="btn" onclick="searchPlate()">查詢</button>
+        </div>
+        <p class="msg" id="msg"></p>
+      </section>
+
+      <!-- 找不到車：新車建檔 -->
+      <section class="card" id="newBikeBox" hidden>
+        <div class="bike-head">
+          <h2 style="margin:0">新車建檔</h2>
+          <span class="plate" id="newPlate"></span>
+        </div>
+        <h3>車輛資料</h3>
+        <div class="form-grid">
+          <label>車型 <small>選填</small><input id="model" placeholder="例如：勁戰六代"></label>
+          <label>年份 <small>選填</small><input type="number" id="year"></label>
+          <label>目前里程（公里）<small>選填</small><input type="number" id="bikeKm"></label>
+        </div>
+        <h3>車主資料</h3>
+        <div class="form-grid">
+          <label>姓名 <small>選填</small><input id="ownerName"></label>
+          <label>電話 <small>選填</small><input id="ownerPhone"></label>
+        </div>
+        <div class="form-actions">
+          <button class="btn" onclick="createBike()">建立</button>
+        </div>
+      </section>
+
+      <!-- 找到車：車輛資料和工單 -->
+      <section class="card" id="bikeBox" hidden>
+        <div class="bike-head" id="bikeTitle"></div>
+        <p class="info" id="bikeInfo"></p>
+
+        <h3>新增工單</h3>
+        <div class="form-grid">
+          <label>日期<input type="date" id="rDate"></label>
+          <label>里程（公里）<input type="number" id="rKm"></label>
+          <label>常用項目
+            <select id="quickItem" onchange="addQuickItem()">
+              <option value="">選了會自動加入</option>
+            </select>
+          </label>
+          <label>項目<input id="rItems" placeholder="選常用項目或自己打"></label>
+          <label>零件<input id="rParts" placeholder="例如：機油 0.8L"></label>
+          <label>金額（元）<input type="number" id="rAmount"></label>
+          <label>下次保養里程<input type="number" id="rNext"></label>
+          <label>狀態
+            <select id="rStatus">
+              <option>待修</option>
+              <option>維修中</option>
+              <option>已完成</option>
+            </select>
+          </label>
+        </div>
+        <div class="form-actions">
+          <button class="btn" onclick="addRecord()">新增工單</button>
+        </div>
+
+        <h3>維修紀錄</h3>
+        <ul class="list" id="records"></ul>
+      </section>
+    </div>
+
+    <!-- 左邊：工作看板（寬螢幕時固定在最左邊） -->
+    <section class="card sidebar">
+      <h2>工作看板</h2>
+      <div class="stats">
+        <div class="stat">
+          <div class="num" id="statCount">0</div>
+          <div class="label">今日來客</div>
+        </div>
+        <div class="stat">
+          <div class="num" id="statIncome">$0</div>
+          <div class="label">今日營收</div>
+        </div>
+      </div>
+
+      <h3>待處理工單</h3>
+      <ul class="list" id="pendingList"></ul>
+    </section>
+
+    <!-- 右邊：其他功能（之後的新功能放這裡） -->
+    <aside class="extra">
+      <section class="card">
+        <h2>最近查詢</h2>
+        <ul class="list" id="recentList"></ul>
+      </section>
+      <section class="card placeholder">
+        <h2>更多功能</h2>
+        <p>預留區，之後的新功能會放在這裡。</p>
+      </section>
+    </aside>
+  </main>
+
+  <script>
+    let currentBike = null;
+
+    // 狀態對應的顏色 class
+    const STATUS_CLASS = { "待修": "todo", "維修中": "doing", "已完成": "done" };
+
+    // 常用項目（照店裡的保養表），想增加或刪除直接改這裡
+    const COMMON_ITEMS = ["機油", "齒輪油", "空濾", "火星塞", "煞車皮", "煞車油", "輪胎", "皮帶", "普利珠", "電瓶"];
+
+    // 小工具：建立一個元素，順便設定 class 和文字
+    function el(tag, className, text) {
+      const e = document.createElement(tag);
+      if (className) e.className = className;
+      if (text !== undefined) e.textContent = text;
+      return e;
+    }
+
+    // 把常用項目放進下拉選單
+    function setupQuickItems() {
+      const select = document.getElementById("quickItem");
+      COMMON_ITEMS.forEach(name => select.appendChild(el("option", "", name)));
+    }
+
+    // 選了常用項目，就加進「項目」欄位（已經有的不會重複加）
+    function addQuickItem() {
+      const select = document.getElementById("quickItem");
+      const input = document.getElementById("rItems");
+      const name = select.value;
+      if (!name) return;
+      const list = input.value.split("、").map(s => s.trim()).filter(Boolean);
+      if (!list.includes(name)) list.push(name);
+      input.value = list.join("、");
+      select.value = ""; // 選完跳回預設，方便再選下一個
+    }
+
+    // 最近查詢的車（存在這台電腦的瀏覽器裡，最多 8 台）
+    function getRecent() {
+      try {
+        return JSON.parse(localStorage.getItem("recentPlates")) || [];
+      } catch {
+        return [];
+      }
+    }
+
+    function saveRecent(bike) {
+      const list = getRecent().filter(r => r.plate !== bike.plate); // 先拿掉舊的，再放到最前面
+      list.unshift({ plate: bike.plate, model: bike.model || "" });
+      try {
+        localStorage.setItem("recentPlates", JSON.stringify(list.slice(0, 8)));
+      } catch {}
+      showRecent();
+    }
+
+    function showRecent() {
+      const ul = document.getElementById("recentList");
+      ul.innerHTML = "";
+      const list = getRecent();
+      if (list.length === 0) {
+        ul.appendChild(el("li", "empty", "查詢過的車會出現在這裡"));
+        return;
+      }
+      list.forEach(r => {
+        const btn = el("button", "btn-small", "打開");
+        btn.onclick = () => openPlate(r.plate);
+        const li = el("li");
+        li.append(el("span", "plate", r.plate), el("div", "main sub", r.model || "未填車型"), btn);
+        ul.appendChild(li);
+      });
+    }
+
+    // 今天的日期，格式 2026-11-17
+    function today() {
+      return new Date().toLocaleDateString("sv-SE");
+    }
+
+    // 車牌統一格式：去掉空白和 -，全部轉大寫
+    function normalizePlate(text) {
+      return text.toUpperCase().replace(/[^A-Z0-9]/g, "");
+    }
+
+    async function checkLogin() {
+      const { data } = await db.auth.getSession();
+      if (!data.session) {
+        location.href = "index.html";
+        return;
+      }
+      document.getElementById("who").textContent = data.session.user.email;
+      loadDashboard();
+
+      // 從車輛總覽按「打開」過來時，自動查詢那台車
+      const plate = new URLSearchParams(location.search).get("plate");
+      if (plate) openPlate(plate);
+    }
+
+    // 用車牌查詢，順便把車主資料一起抓出來
+    async function searchPlate() {
+      const plate = normalizePlate(document.getElementById("plateInput").value);
+      const msg = document.getElementById("msg");
+      document.getElementById("newBikeBox").hidden = true;
+      document.getElementById("bikeBox").hidden = true;
+      if (!plate) {
+        msg.textContent = "請輸入車牌";
+        return;
+      }
+
+      const { data, error } = await db
+        .from("bikes")
+        .select("*, customers(*)")
+        .eq("plate", plate)
+        .maybeSingle();
+      if (error) {
+        msg.textContent = "查詢失敗：" + error.message;
+        return;
+      }
+
+      if (!data) {
+        msg.textContent = "查無此車，請建檔";
+        document.getElementById("newPlate").textContent = plate;
+        document.getElementById("newBikeBox").hidden = false;
+        return;
+      }
+      msg.textContent = "";
+      currentBike = data;
+      saveRecent(data);
+      showBike();
+    }
+
+    // 從看板直接打開某台車
+    function openPlate(plate) {
+      document.getElementById("plateInput").value = plate;
+      searchPlate();
+      window.scrollTo(0, 0);
+    }
+
+    // 新車建檔：有填車主就順便建立客戶
+    async function createBike() {
+      const plate = document.getElementById("newPlate").textContent;
+      const ownerName = document.getElementById("ownerName").value.trim();
+      const ownerPhone = document.getElementById("ownerPhone").value.trim();
+      let customerId = null;
+
+      if (ownerName || ownerPhone) {
+        const { data, error } = await db
+          .from("customers")
+          .insert({ name: ownerName || "未填姓名", phone: ownerPhone })
+          .select()
+          .single();
+        if (error) {
+          alert("建立車主失敗：" + error.message);
+          return;
+        }
+        customerId = data.id;
+      }
+
+      const { error } = await db.from("bikes").insert({
+        plate,
+        customer_id: customerId,
+        model: document.getElementById("model").value.trim(),
+        year: Number(document.getElementById("year").value) || null,
+        mileage: Number(document.getElementById("bikeKm").value) || null
+      });
+      if (error) {
+        alert("建檔失敗：" + error.message);
+        return;
+      }
+
+      ["model", "year", "bikeKm", "ownerName", "ownerPhone"].forEach(id => {
+        document.getElementById(id).value = "";
+      });
+      document.getElementById("plateInput").value = plate;
+      searchPlate();
+    }
+
+    // 顯示車輛資料
+    function showBike() {
+      const b = currentBike;
+      const title = document.getElementById("bikeTitle");
+      title.innerHTML = "";
+      title.append(el("span", "plate", b.plate), el("span", "model", b.model || "未填車型"));
+
+      const owner = b.customers
+        ? `${b.customers.name}　${b.customers.phone || ""}`
+        : "未登記車主";
+      document.getElementById("bikeInfo").textContent =
+        `車主：${owner}｜年份：${b.year || "-"}｜目前里程：${b.mileage ?? "-"} 公里`;
+      document.getElementById("rDate").value = today();
+      document.getElementById("bikeBox").hidden = false;
+      loadRecords();
+    }
+
+    // 讀出這台車的所有工單
+    async function loadRecords() {
+      const { data, error } = await db
+        .from("service_records")
+        .select("*")
+        .eq("bike_id", currentBike.id)
+        .order("date", { ascending: false, nullsFirst: false });
+      if (error) {
+        alert("讀取工單失敗：" + error.message);
+        return;
+      }
+
+      const list = document.getElementById("records");
+      list.innerHTML = "";
+      if (data.length === 0) {
+        list.appendChild(el("li", "empty", "還沒有紀錄"));
+        return;
+      }
+
+      data.forEach(r => {
+        const li = el("li");
+
+        const main = el("div", "main");
+        main.append(
+          el("div", "", r.items + (r.parts ? `（${r.parts}）` : "")),
+          el("div", "sub", `${r.date || "日期不明"}｜${r.mileage ?? "-"} 公里`)
+        );
+
+        // 狀態下拉選單，改了就直接存進資料庫，顏色也跟著變
+        const select = el("select", STATUS_CLASS[r.status]);
+        ["待修", "維修中", "已完成"].forEach(s => select.appendChild(el("option", "", s)));
+        select.value = r.status;
+        select.onchange = () => {
+          select.className = STATUS_CLASS[select.value];
+          updateStatus(r.id, select.value);
+        };
+
+        li.append(main, el("div", "money", `$${(r.total || 0).toLocaleString()}`), select);
+        list.appendChild(li);
+      });
+    }
+
+    async function updateStatus(id, status) {
+      const { error } = await db.from("service_records").update({ status }).eq("id", id);
+      if (error) {
+        alert("更新失敗：" + error.message);
+        return;
+      }
+      loadDashboard();
+    }
+
+    // 新增工單
+    async function addRecord() {
+      const items = document.getElementById("rItems").value.trim();
+      const km = Number(document.getElementById("rKm").value) || null;
+      if (!items) {
+        alert("請填寫維修項目");
+        return;
+      }
+
+      const { error } = await db.from("service_records").insert({
+        bike_id: currentBike.id,
+        date: document.getElementById("rDate").value || undefined,
+        mileage: km,
+        items,
+        parts: document.getElementById("rParts").value.trim(),
+        total: Number(document.getElementById("rAmount").value) || 0,
+        next_service_km: Number(document.getElementById("rNext").value) || null,
+        status: document.getElementById("rStatus").value
+      });
+      if (error) {
+        alert("新增失敗：" + error.message);
+        return;
+      }
+
+      // 如果這次的里程比較新，順便更新車輛的里程
+      if (km && km > (currentBike.mileage || 0)) {
+        await db.from("bikes").update({ mileage: km }).eq("id", currentBike.id);
+        currentBike.mileage = km;
+      }
+
+      ["rKm", "rItems", "rParts", "rAmount", "rNext"].forEach(id => {
+        document.getElementById(id).value = "";
+      });
+      document.getElementById("rStatus").value = "待修";
+      showBike();
+      loadDashboard();
+    }
+
+    // 工作看板：今日統計、待處理工單
+    async function loadDashboard() {
+      // 1. 今天的來客數和營收
+      const { data: todayRecords, error: e1 } = await db
+        .from("service_records")
+        .select("bike_id, total")
+        .eq("date", today());
+      if (e1) {
+        alert("讀取看板失敗：" + e1.message);
+        return;
+      }
+      const income = todayRecords.reduce((sum, r) => sum + (r.total || 0), 0);
+      // 同一台車今天開了兩張工單，也只算一位客人
+      const visitors = new Set(todayRecords.map(r => r.bike_id)).size;
+      document.getElementById("statCount").textContent = visitors;
+      document.getElementById("statIncome").textContent = `$${income.toLocaleString()}`;
+
+      // 2. 還沒完成的工單（順便抓車牌）
+      const { data: pending, error: e2 } = await db
+        .from("service_records")
+        .select("*, bikes(plate, model)")
+        .neq("status", "已完成")
+        .order("date");
+      if (e2) {
+        alert("讀取待處理工單失敗：" + e2.message);
+        return;
+      }
+
+      const pendingList = document.getElementById("pendingList");
+      pendingList.innerHTML = "";
+      if (pending.length === 0) {
+        pendingList.appendChild(
+          el("li", "empty", "目前沒有待處理工單。查詢車牌 → 新增工單，狀態選「待修」或「維修中」，就會出現在這裡。")
+        );
+      }
+      pending.forEach(r => {
+        const li = el("li");
+
+        const main = el("div", "main");
+        main.append(
+          el("div", "", r.items),
+          el("div", "sub", `${r.bikes.model || "未填車型"}｜${r.date}`)
+        );
+
+        const openBtn = el("button", "btn-small", "打開");
+        openBtn.onclick = () => openPlate(r.bikes.plate);
+
+        li.append(
+          el("span", "badge " + STATUS_CLASS[r.status], r.status),
+          el("span", "plate", r.bikes.plate),
+          main,
+          openBtn
+        );
+        pendingList.appendChild(li);
+      });
+    }
+
+    async function logout() {
+      await db.auth.signOut();
+      location.href = "index.html";
+    }
+
+    setupQuickItems();
+    showRecent();
+    checkLogin();
+  </script>
+</body>
+</html>
