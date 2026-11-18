@@ -335,3 +335,17 @@ label.inline input { width: auto; }
 }
 /* 車輛資料裡的預約提示 */
 .appt-note { background: #eff6ff; color: #1e3a8a; border-radius: 8px; padding: 8px 12px; margin: 8px 0 0; font-weight: 600; }
+
+/* ===== 小提示（toast）、防連點、電話遮罩 ===== */
+#toastBox { position: fixed; right: 16px; bottom: 16px; display: flex; flex-direction: column; gap: 8px; z-index: 200; }
+.toast {
+  background: #111827; color: #fff; padding: 12px 16px; border-radius: 10px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.25); max-width: 360px; font-weight: 600;
+  animation: toast-in 0.2s ease-out;
+}
+.toast.error { background: #b91c1c; }
+.toast.ok { background: #15803d; }
+@keyframes toast-in { from { transform: translateY(10px); opacity: 0; } to { transform: none; opacity: 1; } }
+body.busy { cursor: progress; }
+body.busy .btn, body.busy .btn-small { opacity: 0.6; pointer-events: none; }   /* 存檔中，按鈕先變淡、按不了 */
+.reveal { cursor: pointer; }

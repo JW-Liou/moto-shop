@@ -839,8 +839,19 @@
         const main = el("div", "main");
         // 第一行：時間、姓名、項目；第二行：車牌、電話、狀態
         const line1 = [a.time ? a.time.slice(0, 5) : "--:--", a.name, a.items].filter(Boolean).join("　");
-        const line2 = [a.plate || "未填車牌", a.phone, a.status !== "預約中" ? a.status : ""].filter(Boolean).join("｜");
-        main.append(el("div", "", line1), el("div", "sub", line2));
+        // 電話先遮起來，點一下才顯示完整號碼（客人可能看得到這個畫面）
+        const status = a.status !== "預約中" ? a.status : "";
+        const masked = [a.plate || "未填車牌", maskPhone(a.phone), status].filter(Boolean).join("｜");
+        const full = [a.plate || "未填車牌", a.phone, status].filter(Boolean).join("｜");
+        const sub = el("div", "sub", masked);
+        main.append(el("div", "", line1), sub);
+        if (a.phone) {
+          main.classList.add("reveal");
+          main.title = "點一下顯示／隱藏完整電話";
+          main.onclick = () => {
+            sub.textContent = sub.textContent === masked ? full : masked;
+          };
+        }
         li.appendChild(main);
 
         // 還在預約中的，才有「到店」和「取消」按鈕
@@ -969,7 +980,7 @@
         .join("、");
       box.hidden = false;
     }
-    
+
     async function cancelAppt(id) {
       if (!confirm("確定要取消這個預約嗎？")) return;
       const { error } = await db.from("appointments").update({ status: "取消" }).eq("id", id);
@@ -1056,6 +1067,55 @@
       await db.from("notes").delete().eq("done", true);
       loadNotes();
     }
+    // ===== 電話遮罩 =====
+    // 只露出前 4 碼和後 3 碼，例如 0912345678 → 0912-***-678
+    function maskPhone(phone) {
+      const d = (phone || "").replace(/\D/g, "");
+      if (d.length < 7) return phone || "";
+      return `${d.slice(0, 4)}-***-${d.slice(-3)}`;
+    }
+
+    // ===== 畫面右下角的小提示（取代 alert 跳出視窗）=====
+    function toast(message, type = "error") {
+      let box = document.getElementById("toastBox");
+      if (!box) {
+        box = el("div");
+        box.id = "toastBox";
+        document.body.appendChild(box);
+      }
+      // 一樣的訊息已經在畫面上，就不要再疊一個（例如斷線時每分鐘自動更新失敗）
+      if ([...box.children].some(t => t.textContent === message)) return;
+
+      const t = el("div", "toast " + type, message);
+      box.appendChild(t);
+      setTimeout(() => t.remove(), 4000); // 4 秒後自動消失
+    }
+
+    // 程式裡原本所有的 alert(...)，都改成用小提示顯示
+    window.alert = message => toast(message, "error");
+
+    // ===== 防止按兩下 =====
+    // 把一個函式「包起來」：執行中再按一次會被忽略，做完才能再按
+    function locked(fn) {
+      let running = false;
+      return async function (...args) {
+        if (running) return;
+        running = true;
+        document.body.classList.add("busy");
+        try {
+          return await fn(...args);
+        } finally {
+          running = false;
+          document.body.classList.remove("busy");
+        }
+      };
+    }
+
+    // 這些是「會新增或修改資料」的按鈕，全部加上防連點
+    ["addRecord", "createBike", "saveEdit", "setOwner", "saveAppt", "addNote"].forEach(name => {
+      window[name] = locked(window[name]);
+    });
+    
     async function logout() {
       await db.auth.signOut();
       location.href = "index.html";
