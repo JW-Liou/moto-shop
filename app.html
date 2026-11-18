@@ -21,7 +21,7 @@
       <button class="btn-ghost" onclick="openRevenue()" title="今日營收">＄</button>
       <button class="btn-ghost" onclick="location.href='customers.html'">客戶查詢</button>
       <button class="btn-ghost" onclick="location.href='bikes.html'">車輛總覽</button>
-      <button class="btn-ghost" onclick="location.href='import.html'">匯入 Excel</button>
+      <button class="btn-ghost" onclick="location.href='import.html'">匯入／備份</button>
       <button class="btn-ghost" onclick="logout()">登出</button>
     </div>
   </header>
@@ -331,6 +331,9 @@
       // 從車輛總覽按「打開」過來時，自動查詢那台車
       const plate = new URLSearchParams(location.search).get("plate");
       if (plate) openPlate(plate);
+
+      // 超過 7 天沒備份，提醒一下
+      remindBackup();
     }
 
     // 用車牌查詢，順便把車主資料一起抓出來
@@ -1261,8 +1264,22 @@
       return confirmChecks(errors, warnings);
     }
 
+    // ===== 備份提醒 =====
+    function remindBackup() {
+      let last = null;
+      try {
+        last = localStorage.getItem("lastBackup");
+      } catch {}
+      const days = last ? Math.floor((Date.now() - new Date(last)) / 86400000) : null;
+      if (days === null || days >= 7) {
+        toast(last
+          ? `已經 ${days} 天沒有備份了，記得到「匯入／備份」按一鍵備份`
+          : "這台電腦還沒有備份過，記得到「匯入／備份」按一鍵備份", "error");
+      }
+    }
+
     async function logout() {
-      await db.auth.signOut();
+      await db.auth.signOut({ scope: "local" }); // 只登出這一台，其他裝置不受影響
       location.href = "index.html";
     }
 

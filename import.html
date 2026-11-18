@@ -22,6 +22,19 @@
   </header>
 
   <main class="container">
+    <!-- 一鍵備份 -->
+    <section class="card">
+      <h2>資料備份</h2>
+      <p class="info">
+        把所有資料（客戶、車輛、工單、預約、便條）一次下載成一個 Excel 檔。
+        建議<b>每週備份一次</b>，檔案存在電腦裡，也另外存一份到雲端硬碟（例如 Google 雲端硬碟）。
+      </p>
+      <div class="form-actions">
+        <button class="btn" id="backupBtn" onclick="backupAll()">一鍵備份</button>
+      </div>
+      <p class="info" id="backupInfo"></p>
+    </section>
+
     <section class="card">
       <h2>匯入 Excel 紀錄</h2>
       <p class="info">
@@ -273,6 +286,98 @@
       if (!data.session) location.href = "index.html";
     }
 
+    // ===== 一鍵備份 =====
+    // 要備份的資料表，以及在 Excel 裡的工作表名稱
+    const BACKUP_TABLES = [
+      { table: "customers", sheet: "客戶" },
+      { table: "bikes", sheet: "車輛" },
+      { table: "service_records", sheet: "工單" },
+      { table: "appointments", sheet: "預約" },
+      { table: "notes", sheet: "便條" }
+    ];
+
+    // Supabase 一次最多給 1000 筆，這裡一頁一頁拿，直到拿完
+    async function fetchAllRows(table) {
+      const size = 1000;
+      let all = [];
+      for (let from = 0; ; from += size) {
+        const { data, error } = await db
+          .from(table)
+          .select("*")
+          .order("id")
+          .range(from, from + size - 1);
+        if (error) return { data: null, error };
+        all = all.concat(data);
+        if (data.length < size) return { data: all, error: null };
+      }
+    }
+
+    async function backupAll() {
+      const btn = document.getElementById("backupBtn");
+      const info = document.getElementById("backupInfo");
+      btn.disabled = true;
+      info.textContent = "備份中，請稍等...";
+
+      try {
+        const book = XLSX.utils.book_new();
+        const summary = [];
+
+        // 每一張資料表，變成 Excel 裡的一個工作表
+        for (const t of BACKUP_TABLES) {
+          info.textContent = `備份中：${t.sheet}...`;
+          const { data, error } = await fetchAllRows(t.table);
+          if (error) {
+            alert(`備份「${t.sheet}」失敗：` + error.message);
+            info.textContent = "備份失敗，請再試一次";
+            return;
+          }
+          const rows = data.length ? data : [{ "（沒有資料）": "" }];
+          XLSX.utils.book_append_sheet(book, XLSX.utils.json_to_sheet(rows), t.sheet);
+          summary.push({ 工作表: t.sheet, 資料表名稱: t.table, 筆數: data.length });
+        }
+
+        // 第一個工作表放「說明」：備份時間和每張表有幾筆
+        const now = new Date();
+        summary.push({});
+        summary.push({ 工作表: "備份時間", 資料表名稱: now.toLocaleString("zh-TW", { hour12: false }) });
+        summary.push({ 工作表: "注意", 資料表名稱: "這是系統的完整備份，請不要修改裡面的內容，需要還原時再拿出來用" });
+        XLSX.utils.book_append_sheet(book, XLSX.utils.json_to_sheet(summary), "說明");
+        book.SheetNames.unshift(book.SheetNames.pop()); // 把「說明」移到第一個
+
+        // 檔名例如：備份_2026-11-19_0130.xlsx
+        const stamp = now.toLocaleDateString("sv-SE") + "_" +
+          now.toTimeString().slice(0, 5).replace(":", "");
+        XLSX.writeFile(book, `備份_${stamp}.xlsx`);
+
+        // 記下這次備份的時間，主畫面會用來提醒
+        try {
+          localStorage.setItem("lastBackup", now.toISOString());
+        } catch {}
+        showBackupInfo();
+      } finally {
+        btn.disabled = false;
+      }
+    }
+
+    // 顯示上次備份是什麼時候
+    function showBackupInfo() {
+      const info = document.getElementById("backupInfo");
+      let last = null;
+      try {
+        last = localStorage.getItem("lastBackup");
+      } catch {}
+      if (!last) {
+        info.textContent = "這台電腦還沒有備份過。";
+        return;
+      }
+      const days = Math.floor((Date.now() - new Date(last)) / 86400000);
+      const when = new Date(last).toLocaleString("zh-TW", { hour12: false });
+      info.textContent = days >= 7
+        ? `⚠ 上次備份是 ${when}，已經 ${days} 天沒有備份了！`
+        : `上次備份：${when}（${days === 0 ? "今天" : days + " 天前"}）`;
+    }
+
+    showBackupInfo();
     checkLogin();
   </script>
 </body>
