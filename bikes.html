@@ -11,21 +11,29 @@
 </head>
 <body>
   <header class="topbar">
-    <div class="brand">竹北榮詮<span>管理系統</span></div>
+    <a class="brand" href="app.html">竹北榮詮<span>管理系統</span></a>
     <div class="user">
       <button class="btn-ghost" onclick="location.href='app.html'">回系統</button>
     </div>
   </header>
 
   <main class="container">
-    <!-- 整體統計 -->
+    <!-- 整體統計：每一格都可以點，會跳到下面的明細 -->
     <section class="card">
       <h2>車輛總覽</h2>
       <div class="stats stats-4">
-        <div class="stat"><div class="num" id="sBikes">-</div><div class="label">車輛總數</div></div>
-        <div class="stat"><div class="num" id="sRecords">-</div><div class="label">工單總數</div></div>
-        <div class="stat"><div class="num" id="sMonth">-</div><div class="label">本月工單</div></div>
-        <div class="stat"><div class="num" id="sIncome">-</div><div class="label">本月營收</div></div>
+        <div class="stat clickable" onclick="goBikes()">
+          <div class="num" id="sBikes">-</div><div class="label">車輛總數 ›</div>
+        </div>
+        <div class="stat clickable" onclick="goOrders('all')">
+          <div class="num" id="sRecords">-</div><div class="label">工單總數 ›</div>
+        </div>
+        <div class="stat clickable" onclick="goOrders('month')">
+          <div class="num" id="sMonth">-</div><div class="label">本月工單 ›</div>
+        </div>
+        <div class="stat clickable" onclick="goRevenue()">
+          <div class="num" id="sIncome">-</div><div class="label">本月營收 ›</div>
+        </div>
       </div>
     </section>
 
@@ -42,7 +50,8 @@
     </div>
 
     <!-- 全部車輛 -->
-    <section class="card">
+    <section class="card" id="bikeSection">
+      <h2>全部車輛</h2>
       <div class="toolbar">
         <input id="filter" placeholder="搜尋車牌、車型、車主、電話" oninput="render()">
         <select id="sort" onchange="render()">
@@ -56,10 +65,52 @@
       <p class="info" id="countText"></p>
       <ul class="list" id="bikeList"></ul>
     </section>
+
+    <!-- 營收明細 -->
+    <section class="card" id="revenueSection">
+      <h2>營收明細</h2>
+      <div class="toolbar">
+        <label class="inline">月份<input type="month" id="revMonth" onchange="renderRevenue()"></label>
+      </div>
+      <div class="stats" style="margin-top: 12px">
+        <div class="stat"><div class="num" id="revTotal">$0</div><div class="label">這個月營收（已完成的工單）</div></div>
+        <div class="stat"><div class="num" id="revCount">0</div><div class="label">已完成工單</div></div>
+      </div>
+
+      <h3>每日營收</h3>
+      <ol class="rank" id="revDays"></ol>
+
+      <h3>已完成的工單</h3>
+      <ul class="list" id="revList"></ul>
+    </section>
+
+    <!-- 工單明細 -->
+    <section class="card" id="orderSection">
+      <h2>工單明細</h2>
+      <div class="toolbar">
+        <input id="oKeyword" placeholder="搜尋車牌或項目" oninput="renderOrders()">
+        <select id="oPeriod" onchange="renderOrders()">
+          <option value="month">本月</option>
+          <option value="all">全部</option>
+        </select>
+        <select id="oStatus" onchange="renderOrders()">
+          <option value="all">全部狀態</option>
+          <option>待修</option>
+          <option>維修中</option>
+          <option>已完成</option>
+        </select>
+        <button class="btn-small" onclick="exportOrders()">匯出 Excel</button>
+      </div>
+      <p class="info" id="oCountText"></p>
+      <ul class="list" id="orderList"></ul>
+    </section>
   </main>
 
   <script>
-    let bikes = []; // 整理好的車輛資料
+    let bikes = [];      // 整理好的車輛資料
+    let allRecords = []; // 所有工單（每筆都加上車牌、車型，方便列明細）
+
+    const STATUS_CLASS = { "待修": "todo", "維修中": "doing", "已完成": "done" };
 
     // 小工具：建立一個元素，順便設定 class 和文字
     function el(tag, className, text) {
@@ -73,11 +124,22 @@
       return new Date().toLocaleDateString("sv-SE").slice(0, 7); // 例如 2026-11
     }
 
+    function money(n) {
+      return `$${(n || 0).toLocaleString()}`;
+    }
+
+    // 已完成工單的金額加總（營收只算已完成的）
+    function sumDone(records) {
+      return records
+        .filter(r => r.status === "已完成")
+        .reduce((sum, r) => sum + (r.total || 0), 0);
+    }
+
     // 一次讀出：所有車輛 + 車主 + 每台車的工單
     async function loadData() {
       const { data, error } = await db
         .from("bikes")
-        .select("*, customers(name, phone), service_records(date, items, total)");
+        .select("*, customers(name, phone), service_records(id, date, items, total, status, completed_at)");
       if (error) {
         alert("讀取失敗：" + error.message);
         return;
@@ -100,24 +162,29 @@
         };
       });
 
+      // 把所有工單攤平成一個清單，新的排前面
+      allRecords = bikes.flatMap(b => b.records.map(r => ({ ...r, plate: b.plate, model: b.model })));
+      allRecords.sort((a, b) => (b.date || "").localeCompare(a.date || ""));
+
+      document.getElementById("revMonth").value = thisMonth();
       showStats();
       render();
+      renderRevenue();
+      renderOrders();
     }
 
-    // 上方的統計和排行
+    // ===== 上方的統計和排行 =====
     function showStats() {
-      const all = bikes.flatMap(b => b.records);
-      const month = all.filter(r => r.date && r.date.startsWith(thisMonth()));
-      const income = month.reduce((sum, r) => sum + (r.total || 0), 0);
+      const month = allRecords.filter(r => r.date && r.date.startsWith(thisMonth()));
 
       document.getElementById("sBikes").textContent = bikes.length;
-      document.getElementById("sRecords").textContent = all.length;
+      document.getElementById("sRecords").textContent = allRecords.length;
       document.getElementById("sMonth").textContent = month.length;
-      document.getElementById("sIncome").textContent = `$${income.toLocaleString()}`;
+      document.getElementById("sIncome").textContent = money(sumDone(month));
 
       // 熱門項目：把「換機油、齒輪油」拆成兩個項目來數
       const itemCount = {};
-      all.forEach(r => {
+      allRecords.forEach(r => {
         (r.items || "").replace(/（.*?）|\(.*?\)/g, "").split(/[、,，\/+＋\s]+/).forEach(word => {
           word = word.trim();
           if (word && word !== "（未填項目）") itemCount[word] = (itemCount[word] || 0) + 1;
@@ -152,7 +219,36 @@
       });
     }
 
-    // 依搜尋和排序條件，顯示車輛清單
+    // ===== 點上方的格子，跳到下面的明細 =====
+    function scrollToSection(id) {
+      document.getElementById(id).scrollIntoView({ behavior: "smooth" });
+    }
+
+    function goBikes() {
+      scrollToSection("bikeSection");
+    }
+
+    function goOrders(period) {
+      document.getElementById("oPeriod").value = period; // "month" 或 "all"
+      document.getElementById("oStatus").value = "all";
+      document.getElementById("oKeyword").value = "";
+      renderOrders();
+      scrollToSection("orderSection");
+    }
+
+    function goRevenue() {
+      document.getElementById("revMonth").value = thisMonth();
+      renderRevenue();
+      scrollToSection("revenueSection");
+    }
+
+    function openButton(plate) {
+      const btn = el("button", "btn-small", "打開");
+      btn.onclick = () => location.href = "app.html?plate=" + encodeURIComponent(plate);
+      return btn;
+    }
+
+    // ===== 全部車輛 =====
     function render() {
       const keyword = document.getElementById("filter").value.trim().toUpperCase();
       const sort = document.getElementById("sort").value;
@@ -179,7 +275,6 @@
       }
 
       list.forEach(b => {
-        const li = el("li");
         const main = el("div", "main");
         const ownerText = b.owner ? `${b.owner} ${b.phone}` : "未登記車主";
         main.append(
@@ -187,16 +282,108 @@
           el("div", "sub",
             `里程 ${b.mileage ? b.mileage.toLocaleString() : "-"} 公里｜來店 ${b.count} 次｜上次 ${b.last || "-"}`)
         );
-
-        const btn = el("button", "btn-small", "打開");
-        btn.onclick = () => location.href = "app.html?plate=" + encodeURIComponent(b.plate);
-
-        li.append(el("span", "plate", b.plate), main, btn);
+        const li = el("li");
+        li.append(el("span", "plate", b.plate), main, openButton(b.plate));
         ul.appendChild(li);
       });
     }
 
-    // 匯出全部車輛成 Excel（也可以當備份）
+    // ===== 營收明細 =====
+    function renderRevenue() {
+      const m = document.getElementById("revMonth").value || thisMonth();
+      const done = allRecords.filter(r => r.status === "已完成" && r.date && r.date.startsWith(m));
+
+      document.getElementById("revTotal").textContent = money(sumDone(done));
+      document.getElementById("revCount").textContent = done.length;
+
+      // 1. 每日營收：把同一天的工單加在一起
+      const byDay = {};
+      done.forEach(r => {
+        if (!byDay[r.date]) byDay[r.date] = { income: 0, orders: 0, bikes: new Set() };
+        byDay[r.date].income += r.total || 0;
+        byDay[r.date].orders += 1;
+        byDay[r.date].bikes.add(r.plate);
+      });
+      const days = Object.keys(byDay).sort().reverse(); // 新的日期排前面
+      const max = Math.max(1, ...days.map(d => byDay[d].income));
+
+      const dayList = document.getElementById("revDays");
+      dayList.innerHTML = "";
+      if (days.length === 0) dayList.appendChild(el("li", "empty", "這個月還沒有已完成的工單"));
+      days.forEach(d => {
+        const info = byDay[d];
+        const week = "日一二三四五六"[new Date(d + "T00:00").getDay()];
+        const li = el("li");
+        const bar = el("div", "bar");
+        bar.style.width = `${(info.income / max) * 100}%`;
+        li.append(
+          el("span", "rank-name", `${d.slice(5).replace("-", "/")}（${week}）　來客 ${info.bikes.size}｜${info.orders} 張`),
+          el("span", "rank-num", money(info.income)),
+          bar
+        );
+        dayList.appendChild(li);
+      });
+
+      // 2. 這個月每一筆已完成的工單
+      const ul = document.getElementById("revList");
+      ul.innerHTML = "";
+      if (done.length === 0) ul.appendChild(el("li", "empty", "沒有資料"));
+      done.forEach(r => {
+        const main = el("div", "main");
+        main.append(el("div", "", r.items), el("div", "sub", `${r.date}｜${r.model || "未填車型"}`));
+        const li = el("li");
+        li.append(el("span", "plate", r.plate), main, el("div", "money", money(r.total)), openButton(r.plate));
+        ul.appendChild(li);
+      });
+    }
+
+    // ===== 工單明細 =====
+    let shownOrders = []; // 目前篩選出來的工單（匯出 Excel 用）
+
+    function renderOrders() {
+      const keyword = document.getElementById("oKeyword").value.trim().toUpperCase();
+      const plateKey = keyword.replace(/[^A-Z0-9]/g, "");
+      const period = document.getElementById("oPeriod").value;
+      const status = document.getElementById("oStatus").value;
+
+      let list = allRecords;
+      if (period === "month") list = list.filter(r => r.date && r.date.startsWith(thisMonth()));
+      if (status !== "all") list = list.filter(r => r.status === status);
+      if (keyword) {
+        list = list.filter(r =>
+          (r.items || "").toUpperCase().includes(keyword) || (plateKey && r.plate.includes(plateKey))
+        );
+      }
+      shownOrders = list;
+
+      document.getElementById("oCountText").textContent =
+        `共 ${list.length} 張｜已完成的金額合計 ${money(sumDone(list))}`;
+
+      const ul = document.getElementById("orderList");
+      ul.innerHTML = "";
+      if (list.length === 0) {
+        ul.appendChild(el("li", "empty", "沒有符合的工單"));
+        return;
+      }
+      list.slice(0, 200).forEach(r => { // 最多先顯示 200 筆，太多會變慢
+        const main = el("div", "main");
+        main.append(el("div", "", r.items), el("div", "sub", `${r.date || "日期不明"}｜${r.model || "未填車型"}`));
+        const li = el("li");
+        li.append(
+          el("span", "plate", r.plate),
+          main,
+          el("span", "badge " + (STATUS_CLASS[r.status] || ""), r.status || "-"),
+          el("div", "money", money(r.total)),
+          openButton(r.plate)
+        );
+        ul.appendChild(li);
+      });
+      if (list.length > 200) {
+        ul.appendChild(el("li", "empty", `還有 ${list.length - 200} 張沒顯示，可以用上面的條件縮小範圍`));
+      }
+    }
+
+    // ===== 匯出 Excel =====
     function exportExcel() {
       const rows = bikes.map(b => ({
         車牌: b.plate,
@@ -207,10 +394,26 @@
         來店次數: b.count,
         上次來店: b.last
       }));
+      saveExcel(rows, "車輛總覽");
+    }
+
+    function exportOrders() {
+      const rows = shownOrders.map(r => ({
+        日期: r.date || "",
+        車牌: r.plate,
+        車型: r.model,
+        項目: r.items,
+        狀態: r.status,
+        金額: r.total || 0
+      }));
+      saveExcel(rows, "工單明細");
+    }
+
+    function saveExcel(rows, name) {
       const sheet = XLSX.utils.json_to_sheet(rows);
       const book = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(book, sheet, "車輛總覽");
-      XLSX.writeFile(book, `車輛總覽_${new Date().toLocaleDateString("sv-SE")}.xlsx`);
+      XLSX.utils.book_append_sheet(book, sheet, name);
+      XLSX.writeFile(book, `${name}_${new Date().toLocaleDateString("sv-SE")}.xlsx`);
     }
 
     // 沒登入就送回登入頁

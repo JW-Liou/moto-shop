@@ -11,9 +11,10 @@
 <body>
   <!-- 上方標題列 -->
   <header class="topbar">
-    <div class="brand">竹北榮詮<span>管理系統</span></div>
+    <a class="brand" href="app.html">竹北榮詮<span>管理系統</span></a>
     <div class="user">
       <span id="who"></span>
+      <button class="btn-ghost" onclick="openRevenue()" title="今日營收">＄</button>
       <button class="btn-ghost" onclick="location.href='customers.html'">客戶查詢</button>
       <button class="btn-ghost" onclick="location.href='bikes.html'">車輛總覽</button>
       <button class="btn-ghost" onclick="location.href='import.html'">匯入 Excel</button>
@@ -61,6 +62,7 @@
       <section class="card" id="bikeBox" hidden>
         <div class="bike-head" id="bikeTitle"></div>
         <p class="info" id="bikeInfo"></p>
+        <p class="appt-note" id="bikeAppt" hidden></p>
 
         <!-- 登記／修改車主：填同一支電話，多台車就會連到同一位客戶 -->
         <details class="owner-edit">
@@ -113,8 +115,8 @@
           <div class="label">今日來客</div>
         </div>
         <div class="stat">
-          <div class="num" id="statIncome">$0</div>
-          <div class="label">今日營收</div>
+          <div class="num" id="statMonth">0</div>
+          <div class="label">本月來客</div>
         </div>
       </div>
 
@@ -129,16 +131,101 @@
 
     <!-- 右邊：其他功能（之後的新功能放這裡） -->
     <aside class="extra">
+      <!-- 今日預約 -->
+      <section class="card">
+        <div class="card-head">
+          <h2>預約</h2>
+          <button class="btn-small" onclick="openAppt()">＋ 新增</button>
+        </div>
+        <div class="day-nav">
+          <button class="btn-ghost" onclick="changeApptDay(-1)">‹</button>
+          <span id="apptDayLabel"></span>
+          <button class="btn-ghost" onclick="changeApptDay(1)">›</button>
+        </div>
+        <ul class="list compact" id="apptList"></ul>
+      </section>
+
+      <!-- 店內便條 -->
+      <section class="card">
+        <h2>店內便條</h2>
+        <div class="note-add">
+          <input id="noteInput" placeholder="寫點什麼，例如：ABC-1234 零件週五到"
+                 onkeydown="if (event.key === 'Enter') addNote()">
+          <button class="btn-small" onclick="addNote()">新增</button>
+        </div>
+        <ul class="list compact" id="noteList"></ul>
+        <button class="btn-link" onclick="clearDoneNotes()">清除已完成的便條</button>
+      </section>
+
+      <!-- 最近查詢 -->
       <section class="card">
         <h2>最近查詢</h2>
         <ul class="list" id="recentList"></ul>
       </section>
-      <section class="card placeholder">
-        <h2>更多功能</h2>
-        <p>預留區，之後的新功能會放在這裡。</p>
-      </section>
     </aside>
   </main>
+  
+  <!-- 新增預約 -->
+  <div class="modal" id="apptModal" hidden onclick="if (event.target === this) closeAppt()">
+    <div class="modal-box">
+      <div class="modal-head">
+        <h2>新增預約</h2>
+        <button class="btn-small" onclick="closeAppt()">取消</button>
+      </div>
+      <div class="form-grid">
+        <label>日期<input type="date" id="aDate"></label>
+        <label>時間<input type="time" id="aTime"></label>
+        <label>車牌<input id="aPlate" placeholder="例如 ABC-1234" onblur="lookupApptPlate()"></label>
+        <label>姓名<input id="aName"></label>
+        <label>電話<input id="aPhone"></label>
+        <label>項目<input id="aItems" placeholder="例如：換機油"></label>
+      </div>
+      <p class="info" id="aHint"></p>
+      <div class="form-actions">
+        <button class="btn" onclick="saveAppt()">儲存預約</button>
+      </div>
+    </div>
+  </div>
+
+  
+  <!-- 編輯工單：按維修紀錄的「編輯」才會打開 -->
+  <div class="modal" id="editModal" hidden onclick="if (event.target === this) closeEdit()">
+    <div class="modal-box">
+      <div class="modal-head">
+        <h2>編輯工單</h2>
+        <button class="btn-small" onclick="closeEdit()">取消</button>
+      </div>
+      <div class="form-grid">
+        <label>日期<input type="date" id="eDate"></label>
+        <label>里程（公里）<input type="number" id="eKm"></label>
+        <label>項目<input id="eItems"></label>
+        <label>零件<input id="eParts"></label>
+        <label>金額（元）<input type="number" id="eAmount"></label>
+        <label>下次保養里程<input type="number" id="eNext"></label>
+      </div>
+      <div class="form-actions">
+        <button class="btn" onclick="saveEdit()">儲存修改</button>
+      </div>
+    </div>
+  </div>
+
+  
+  <!-- 今日營收：平常藏起來，按右上角的 ＄ 才會打開 -->
+  <div class="modal" id="revenueModal" hidden onclick="if (event.target === this) closeRevenue()">
+    <div class="modal-box">
+      <div class="modal-head">
+        <h2>今日營收</h2>
+        <button class="btn-small" onclick="closeRevenue()">關閉</button>
+      </div>
+      <div class="stat">
+        <div class="num" id="revTotal">$0</div>
+        <div class="label" id="revSub">讀取中...</div>
+      </div>
+      <h3>已完成的消費紀錄</h3>
+      <ul class="list" id="revList"></ul>
+      <p class="info">1 分鐘後會自動關閉，也可以按 Esc 或點旁邊的空白處關閉。</p>
+    </div>
+  </div>
 
   <script>
     let currentBike = null;
@@ -229,6 +316,14 @@
       document.getElementById("who").textContent = data.session.user.email;
       loadDashboard();
 
+      loadAppointments();
+      loadNotes();
+      // 每 1 分鐘自動更新一次（別台電腦或手機新增的資料也會出現）
+      setInterval(() => {
+        loadDashboard();
+        loadAppointments();
+        loadNotes();
+      }, 60000);      
       // 從車輛總覽按「打開」過來時，自動查詢那台車
       const plate = new URLSearchParams(location.search).get("plate");
       if (plate) openPlate(plate);
@@ -376,6 +471,7 @@
       document.getElementById("rDate").value = today();
       document.getElementById("bikeBox").hidden = false;
       loadRecords();
+      loadBikeAppts();
     }
 
     // 讀出這台車的所有工單
@@ -415,8 +511,13 @@
           updateStatus(r.id, select.value);
         };
 
-        li.append(main, el("div", "money", `$${(r.total || 0).toLocaleString()}`), select);
-        list.appendChild(li);
+        // 編輯、刪除按鈕
+        const editBtn = el("button", "btn-small", "編輯");
+        editBtn.onclick = () => openEdit(r);
+        const delBtn = el("button", "btn-small btn-danger", "刪除");
+        delBtn.onclick = () => deleteRecord(r.id);
+
+        li.append(main, el("div", "money", `$${(r.total || 0).toLocaleString()}`), select, editBtn, delBtn);        list.appendChild(li);
       });
     }
 
@@ -488,20 +589,21 @@
 
     // 讀資料：今日統計、還沒完成的工單、今天完成的工單
     async function loadDashboard() {
-      // 1. 今天的來客數和營收
-      const { data: todayRecords, error: e1 } = await db
+      // 1. 今日來客、本月來客（營收藏在右上角的 ＄ 按鈕裡）
+      const monthStart = today().slice(0, 7) + "-01"; // 這個月 1 號，例如 2026-11-01
+      const { data: monthRecords, error: e1 } = await db
         .from("service_records")
-        .select("bike_id, total")
-        .eq("date", today());
+        .select("bike_id, date")
+        .gte("date", monthStart);
       if (e1) {
         alert("讀取看板失敗：" + e1.message);
         return;
       }
-      const income = todayRecords.reduce((sum, r) => sum + (r.total || 0), 0);
-      // 同一台車今天開了兩張工單，也只算一位客人
-      const visitors = new Set(todayRecords.map(r => r.bike_id)).size;
-      document.getElementById("statCount").textContent = visitors;
-      document.getElementById("statIncome").textContent = `$${income.toLocaleString()}`;
+      // 同一台車同一天只算一位客人
+      const todayVisitors = new Set(monthRecords.filter(r => r.date === today()).map(r => r.bike_id)).size;
+      const monthVisitors = new Set(monthRecords.map(r => r.bike_id + "|" + r.date)).size;
+      document.getElementById("statCount").textContent = todayVisitors;
+      document.getElementById("statMonth").textContent = monthVisitors;
 
       // 2. 還沒完成的工單（待修＋維修中）
       const { data: pending, error: e2 } = await db
@@ -559,7 +661,7 @@
         const main = el("div", "main");
         // 今日完成：顯示完成時間和金額；其他：顯示車型和日期
         const sub = boardTab === "done"
-          ? `${new Date(r.completed_at).toLocaleTimeString("zh-TW", { hour: "2-digit", minute: "2-digit", hour12: false })} 完成｜$${(r.total || 0).toLocaleString()}`
+          ? `${new Date(r.completed_at).toLocaleTimeString("zh-TW", { hour: "2-digit", minute: "2-digit", hour12: false })} 完成｜${r.bikes.model || "未填車型"}`
           : `${r.bikes.model || "未填車型"}｜${r.date || "日期不明"}`;
         main.append(el("div", "", r.items), el("div", "sub", sub));
 
@@ -572,11 +674,394 @@
       });
     }
     
+        // ===== 今日營收（藏在右上角，按了才打開）=====
+    let revenueTimer = null;
+
+    async function openRevenue() {
+      document.getElementById("revenueModal").hidden = false;
+      clearTimeout(revenueTimer);
+      revenueTimer = setTimeout(closeRevenue, 60000); // 1 分鐘後自動關閉，避免忘記關
+
+      // 今天完成的工單（從今天 00:00 開始算）
+      const startOfToday = new Date();
+      startOfToday.setHours(0, 0, 0, 0);
+      const { data, error } = await db
+        .from("service_records")
+        .select("*, bikes(plate, model)")
+        .eq("status", "已完成")
+        .gte("completed_at", startOfToday.toISOString())
+        .order("completed_at", { ascending: false });
+      if (error) {
+        alert("讀取營收失敗：" + error.message);
+        return;
+      }
+
+      const total = data.reduce((sum, r) => sum + (r.total || 0), 0);
+      document.getElementById("revTotal").textContent = `$${total.toLocaleString()}`;
+      document.getElementById("revSub").textContent = `今天完成 ${data.length} 筆`;
+
+      const ul = document.getElementById("revList");
+      ul.innerHTML = "";
+      if (data.length === 0) {
+        ul.appendChild(el("li", "empty", "今天還沒有完成的消費紀錄"));
+        return;
+      }
+      data.forEach(r => {
+        const time = new Date(r.completed_at).toLocaleTimeString("zh-TW", { hour: "2-digit", minute: "2-digit", hour12: false });
+        const main = el("div", "main");
+        main.append(el("div", "", r.items), el("div", "sub", `${time} 完成｜${r.bikes.model || "未填車型"}`));
+        const li = el("li");
+        li.append(el("span", "plate", r.bikes.plate), main, el("div", "money", `$${(r.total || 0).toLocaleString()}`));
+        ul.appendChild(li);
+      });
+    }
+
+    function closeRevenue() {
+      document.getElementById("revenueModal").hidden = true;
+      clearTimeout(revenueTimer);
+    }
+
+    // 按 Esc 也能關閉
+    document.addEventListener("keydown", e => {
+      if (e.key === "Escape") {
+        closeRevenue();
+        closeEdit();
+        closeAppt();
+      }
+    });
+        // ===== 編輯、刪除工單 =====
+    let editingId = null; // 正在編輯哪一張工單
+
+    // 打開編輯視窗，把這張工單原本的內容填進去
+    function openEdit(r) {
+      editingId = r.id;
+      document.getElementById("eDate").value = r.date || "";
+      document.getElementById("eKm").value = r.mileage ?? "";
+      document.getElementById("eItems").value = r.items || "";
+      document.getElementById("eParts").value = r.parts || "";
+      document.getElementById("eAmount").value = r.total ?? "";
+      document.getElementById("eNext").value = r.next_service_km ?? "";
+      document.getElementById("editModal").hidden = false;
+    }
+
+    function closeEdit() {
+      document.getElementById("editModal").hidden = true;
+      editingId = null;
+    }
+
+    // 儲存修改（跟新增工單一樣的五步驟，只是 insert 換成 update）
+    async function saveEdit() {
+      // ① 拿輸入
+      const items = document.getElementById("eItems").value.trim();
+      const km = Number(document.getElementById("eKm").value) || null;
+
+      // ② 檢查
+      if (!items) {
+        alert("請填寫維修項目");
+        return;
+      }
+
+      // ③ 更新資料庫：只改 id 等於這張工單的那一筆
+      const { error } = await db.from("service_records").update({
+        date: document.getElementById("eDate").value || null,
+        mileage: km,
+        items,
+        parts: document.getElementById("eParts").value.trim(),
+        total: Number(document.getElementById("eAmount").value) || 0,
+        next_service_km: Number(document.getElementById("eNext").value) || null
+      }).eq("id", editingId);
+
+      // ④ 處理錯誤
+      if (error) {
+        alert("儲存失敗：" + error.message);
+        return;
+      }
+
+      // 里程改得比車輛目前里程還新，就順便更新車輛
+      if (km && km > (currentBike.mileage || 0)) {
+        await db.from("bikes").update({ mileage: km }).eq("id", currentBike.id);
+        currentBike.mileage = km;
+      }
+
+      // ⑤ 更新畫面
+      closeEdit();
+      showBike();
+      loadDashboard();
+    }
+
+    // 刪除工單：先確認，再刪
+    async function deleteRecord(id) {
+      if (!confirm("確定要刪除這張工單嗎？刪除後無法復原。")) return;
+
+      const { error } = await db.from("service_records").delete().eq("id", id);
+      if (error) {
+        alert("刪除失敗：" + error.message);
+        return;
+      }
+      showBike();
+      loadDashboard();
+    }
+        // ===== 預約 =====
+    let apptDay = today(); // 目前在看哪一天的預約
+
+    // 換到前一天或後一天
+    function changeApptDay(step) {
+      const d = new Date(apptDay + "T00:00");
+      d.setDate(d.getDate() + step);
+      apptDay = d.toLocaleDateString("sv-SE");
+      loadAppointments();
+    }
+
+    async function loadAppointments() {
+      const week = "日一二三四五六"[new Date(apptDay + "T00:00").getDay()];
+      const label = apptDay === today() ? "今天" : apptDay.slice(5).replace("-", "/");
+      document.getElementById("apptDayLabel").textContent = `${label}（${week}）`;
+
+      const { data, error } = await db
+        .from("appointments")
+        .select("*")
+        .eq("date", apptDay)
+        .order("time", { nullsFirst: false });
+      if (error) {
+        alert("讀取預約失敗：" + error.message);
+        return;
+      }
+
+      const ul = document.getElementById("apptList");
+      ul.innerHTML = "";
+      if (data.length === 0) {
+        ul.appendChild(el("li", "empty", "這天沒有預約"));
+        return;
+      }
+
+      data.forEach(a => {
+        const li = el("li", a.status === "預約中" ? "" : "faded"); // 已到店、取消的變淡
+        const main = el("div", "main");
+        // 第一行：時間、姓名、項目；第二行：車牌、電話、狀態
+        const line1 = [a.time ? a.time.slice(0, 5) : "--:--", a.name, a.items].filter(Boolean).join("　");
+        const line2 = [a.plate || "未填車牌", a.phone, a.status !== "預約中" ? a.status : ""].filter(Boolean).join("｜");
+        main.append(el("div", "", line1), el("div", "sub", line2));
+        li.appendChild(main);
+
+        // 還在預約中的，才有「到店」和「取消」按鈕
+        if (a.status === "預約中") {
+          const arriveBtn = el("button", "btn-small", "到店");
+          arriveBtn.onclick = () => arriveAppt(a);
+          const cancelBtn = el("button", "btn-small btn-danger", "取消");
+          cancelBtn.onclick = () => cancelAppt(a.id);
+          li.append(arriveBtn, cancelBtn);
+        }
+        ul.appendChild(li);
+      });
+    }
+
+    function openAppt() {
+      ["aTime", "aPlate", "aName", "aPhone", "aItems"].forEach(id => {
+        document.getElementById(id).value = "";
+      });
+      document.getElementById("aDate").value = apptDay;
+      document.getElementById("aHint").textContent = "";
+      document.getElementById("apptModal").hidden = false;
+    }
+
+    function closeAppt() {
+      document.getElementById("apptModal").hidden = true;
+    }
+
+    async function saveAppt() {
+      const date = document.getElementById("aDate").value;
+      const plate = normalizePlate(document.getElementById("aPlate").value);
+      const name = document.getElementById("aName").value.trim();
+      if (!date) {
+        alert("請選擇日期");
+        return;
+      }
+      if (!plate && !name) {
+        alert("車牌和姓名至少填一個");
+        return;
+      }
+
+      const { error } = await db.from("appointments").insert({
+        date,
+        time: document.getElementById("aTime").value || null,
+        plate: plate || null,
+        name,
+        phone: document.getElementById("aPhone").value.trim(),
+        items: document.getElementById("aItems").value.trim(),
+        source: "店內"
+      });
+      if (error) {
+        alert("新增預約失敗：" + error.message);
+        return;
+      }
+      closeAppt();
+      apptDay = date; // 跳到剛剛預約的那一天
+      loadAppointments();
+    }
+
+    // 客人到店：標記已到店，並直接打開那台車
+    async function arriveAppt(a) {
+      await db.from("appointments").update({ status: "已到店" }).eq("id", a.id);
+      loadAppointments();
+      if (!a.plate) return;
+
+      document.getElementById("plateInput").value = a.plate;
+      await searchPlate();
+
+      if (!document.getElementById("bikeBox").hidden) {
+        // 車已經建過檔：把預約的項目填進新增工單
+        if (a.items) document.getElementById("rItems").value = a.items;
+      } else {
+        // 還沒建檔：把預約時填的姓名、電話帶進新車建檔，不用再打一次
+        document.getElementById("ownerName").value = a.name || "";
+        document.getElementById("ownerPhone").value = a.phone || "";
+      }
+      window.scrollTo(0, 0);
+    }
+
+    // 新增預約時，輸入車牌後自動查這台車：已經建檔就帶出車主
+    async function lookupApptPlate() {
+      const plate = normalizePlate(document.getElementById("aPlate").value);
+      const hint = document.getElementById("aHint");
+      hint.textContent = "";
+      if (!plate) return;
+
+      const { data } = await db.from("bikes").select("*, customers(*)").eq("plate", plate).maybeSingle();
+      if (!data) {
+        hint.textContent = "這台車還沒建檔，到店時會自動帶到新車建檔。";
+        return;
+      }
+      if (!data.customers) {
+        hint.textContent = `已建檔（${data.model || "未填車型"}），還沒登記車主。`;
+        return;
+      }
+
+      const c = data.customers;
+      const nameInput = document.getElementById("aName");
+      const phoneInput = document.getElementById("aPhone");
+      // 姓名、電話還沒填，就幫忙帶入
+      if (!nameInput.value) nameInput.value = c.name || "";
+      if (!phoneInput.value) phoneInput.value = c.phone || "";
+
+      // 電話跟系統裡的車主不一樣，提醒一下
+      const same = phoneInput.value.replace(/\D/g, "") === (c.phone || "").replace(/\D/g, "");
+      hint.textContent = same
+        ? `已建檔：車主 ${c.name}　${c.phone || ""}`
+        : `⚠ 這台車登記的車主是 ${c.name}　${c.phone || ""}，跟你填的電話不一樣`;
+    }
+
+    // 打開一台車時，顯示它接下來的預約
+    async function loadBikeAppts() {
+      const box = document.getElementById("bikeAppt");
+      box.hidden = true;
+      const { data } = await db
+        .from("appointments")
+        .select("*")
+        .eq("plate", currentBike.plate)
+        .eq("status", "預約中")
+        .gte("date", today())
+        .order("date")
+        .order("time", { nullsFirst: false });
+      if (!data || data.length === 0) return;
+
+      box.textContent = "📅 預約：" + data
+        .map(a => `${a.date.slice(5).replace("-", "/")} ${a.time ? a.time.slice(0, 5) : ""} ${a.items || ""}`.trim())
+        .join("、");
+      box.hidden = false;
+    }
+    
+    async function cancelAppt(id) {
+      if (!confirm("確定要取消這個預約嗎？")) return;
+      const { error } = await db.from("appointments").update({ status: "取消" }).eq("id", id);
+      if (error) {
+        alert("取消失敗：" + error.message);
+        return;
+      }
+      loadAppointments();
+    }
+
+    // ===== 店內便條 =====
+    async function loadNotes() {
+      const { data, error } = await db
+        .from("notes")
+        .select("*")
+        .order("done")                                // 還沒完成的排前面
+        .order("created_at", { ascending: false })    // 新的排前面
+        .limit(30);
+      if (error) {
+        alert("讀取便條失敗：" + error.message);
+        return;
+      }
+
+      const ul = document.getElementById("noteList");
+      ul.innerHTML = "";
+      if (data.length === 0) {
+        ul.appendChild(el("li", "empty", "還沒有便條"));
+        return;
+      }
+
+      data.forEach(n => {
+        const li = el("li", n.done ? "faded" : "");
+
+        // 打勾 = 完成
+        const check = document.createElement("input");
+        check.type = "checkbox";
+        check.checked = n.done;
+        check.onchange = () => toggleNote(n.id, check.checked);
+
+        const time = new Date(n.created_at).toLocaleString("zh-TW", {
+          month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit", hour12: false
+        });
+        const main = el("div", "main");
+        main.append(el("div", n.done ? "strike" : "", n.content), el("div", "sub", `${time}｜${n.author || ""}`));
+
+        const delBtn = el("button", "btn-icon", "×");
+        delBtn.title = "刪除";
+        delBtn.onclick = () => deleteNote(n.id);
+
+        li.append(check, main, delBtn);
+        ul.appendChild(li);
+      });
+    }
+
+    async function addNote() {
+      const input = document.getElementById("noteInput");
+      const content = input.value.trim();
+      if (!content) return;
+
+      // 記下是誰寫的（取 email @ 前面那段）
+      const who = document.getElementById("who").textContent.split("@")[0];
+      const { error } = await db.from("notes").insert({ content, author: who });
+      if (error) {
+        alert("新增便條失敗：" + error.message);
+        return;
+      }
+      input.value = "";
+      loadNotes();
+    }
+
+    async function toggleNote(id, done) {
+      await db.from("notes").update({ done }).eq("id", id);
+      loadNotes();
+    }
+
+    async function deleteNote(id) {
+      if (!confirm("確定要刪除這張便條嗎？")) return;
+      await db.from("notes").delete().eq("id", id);
+      loadNotes();
+    }
+
+    async function clearDoneNotes() {
+      if (!confirm("確定要清除所有已完成的便條嗎？")) return;
+      await db.from("notes").delete().eq("done", true);
+      loadNotes();
+    }
     async function logout() {
       await db.auth.signOut();
       location.href = "index.html";
     }
 
+    setupQuickItems();
     setupBoardTabs();
     showRecent();
     checkLogin();

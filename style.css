@@ -230,3 +230,108 @@ details.owner-edit .form-grid { margin-top: 10px; }
 .board-list .main { min-width: 0; flex: 1; }
 .board-list .main div:first-child { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .board-list .plate { font-size: 13px; padding: 1px 6px; }
+
+/* ===== 今日營收彈出視窗 ===== */
+.modal {
+  position: fixed;
+  inset: 0;                                /* 蓋滿整個畫面 */
+  background: rgba(17, 24, 39, 0.5);       /* 半透明黑色背景 */
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding: 60px 16px;
+  z-index: 100;                            /* 疊在最上層 */
+}
+.modal-box {
+  background: #fff;
+  border-radius: var(--radius);
+  padding: 20px;
+  width: 100%;
+  max-width: 520px;
+  max-height: calc(100vh - 120px);
+  overflow-y: auto;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+}
+.modal-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+.modal-head h2 { margin: 0; }
+.modal .stat .num { font-size: 36px; }
+
+/* ===== 編輯、刪除工單 ===== */
+.btn-small.btn-danger { background: #fee2e2; color: #b91c1c; }
+.btn-small.btn-danger:hover { background: #fecaca; }
+
+/* ===== 高對比配色：讓字更清楚（放在最下面，會蓋過上面的設定） ===== */
+:root {
+  --bg: #e5e7eb;          /* 背景灰一點，白色卡片更明顯 */
+  --text: #111827;        /* 主要文字：接近黑色 */
+  --muted: #374151;       /* 次要文字：從淺灰改成深灰 */
+  --border: #d1d5db;      /* 分隔線加深 */
+  --accent: #c2410c;      /* 橘色加深，按鈕上的白字更清楚 */
+  --accent-dark: #9a3412;
+}
+body { font-size: 16px; }
+
+/* 卡片：框線和陰影加深，跟背景分得更清楚 */
+.card { border-color: #cbd5e1; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12); }
+.card h3 { color: #1f2937; }
+
+/* 表單：欄位名稱加粗、輸入框框線加深 */
+label { color: #1f2937; font-size: 15px; font-weight: 600; }
+label small { color: #4b5563; font-weight: 400; }
+input, select { border: 1px solid #6b7280; font-weight: 400; }
+input::placeholder { color: #6b7280; }
+
+/* 清單：第二行小字變深、變大 */
+.list .sub { color: #374151; font-size: 15px; }
+.info { color: #374151; }
+
+/* 統計數字的格子 */
+.stat { background: #f3f4f6; border: 1px solid #d1d5db; }
+.stat .label { color: #374151; font-size: 15px; }
+
+/* 看板分頁 */
+.tabs button { color: #374151; }
+.tabs button span { background: #d1d5db; color: #111827; }
+
+/* 上方標題列和預留區 */
+.user { color: #f3f4f6; }
+.topbar .brand span { color: #fb923c; }   /* 深色底上用亮一點的橘 */
+.placeholder { color: #4b5563; border-color: #9ca3af; }
+
+/* 左上角店名：按了回到主頁面 */
+a.brand { color: inherit; text-decoration: none; cursor: pointer; }
+a.brand:hover { opacity: 0.85; }
+
+/* ===== 車輛總覽：可以點的統計格、明細 ===== */
+.stat.clickable { cursor: pointer; transition: border-color 0.15s, background 0.15s; }
+.stat.clickable:hover { border-color: var(--accent); background: #fff7ed; }
+label.inline { flex-direction: row; align-items: center; gap: 8px; }
+label.inline input { width: auto; }
+#revenueSection, #orderSection, #bikeSection { scroll-margin-top: 16px; }
+
+/* ===== 預約、店內便條 ===== */
+.card-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+.card-head h2 { margin: 0; }
+.day-nav { display: flex; align-items: center; justify-content: space-between; background: #f3f4f6; border-radius: 8px; padding: 4px; margin-bottom: 4px; }
+.day-nav span { font-weight: 700; }
+.day-nav .btn-ghost { border: none; color: var(--text); font-size: 20px; padding: 2px 12px; }
+.list.compact li { padding: 8px 0; gap: 8px; }
+.list.compact .main { min-width: 0; }
+.list li.faded { opacity: 0.55; }
+.strike { text-decoration: line-through; }
+.list input[type="checkbox"] { width: 18px; height: 18px; flex: none; accent-color: var(--accent); }
+.btn-icon { background: transparent; color: #6b7280; font-size: 18px; padding: 2px 8px; }
+.btn-icon:hover { color: #b91c1c; }
+.btn-link { background: transparent; color: var(--muted); padding: 8px 0 0; font-size: 14px; font-weight: 500; text-decoration: underline; }
+#noteList { margin-top: 8px; }
+.note-add { display: flex; gap: 8px; }
+.note-add input { flex: 1; min-width: 0; }
+#apptList li { flex-wrap: wrap; }
+#apptList .main { flex-basis: 100%; }
+#apptList li .btn-small { margin-left: auto; }
+#apptList li .btn-small + .btn-small { margin-left: 0; }
+@media (min-width: 1400px) {
+  .layout { grid-template-columns: 340px minmax(0, 1fr) 340px; }  /* 右欄加寬一點 */
+}
+/* 車輛資料裡的預約提示 */
+.appt-note { background: #eff6ff; color: #1e3a8a; border-radius: 8px; padding: 8px 12px; margin: 8px 0 0; font-weight: 600; }
