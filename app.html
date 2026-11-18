@@ -4,6 +4,10 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>竹北榮詮管理系統</title>
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#111827">
+  <link rel="icon" href="icon-192.png">
+  <link rel="apple-touch-icon" href="icon-180.png">
   <link rel="stylesheet" href="style.css">
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="config.js"></script>
@@ -374,12 +378,17 @@
     async function findOrCreateCustomer(name, phone) {
       const digits = phone.replace(/\D/g, "");
       if (digits) {
-        const { data: all, error } = await db.from("customers").select("id, name, phone");
+        // 直接請資料庫用「只留數字的電話」找，不用把全部客戶抓回來比對
+        const { data: found, error } = await db
+          .from("customers")
+          .select("id, name, phone")
+          .eq("phone_digits", digits)
+          .limit(1)
+          .maybeSingle();
         if (error) {
           alert("查詢客戶失敗：" + error.message);
           return null;
         }
-        const found = all.find(c => (c.phone || "").replace(/\D/g, "") === digits);
         if (found) {
           if (name && found.name === "未填姓名") {
             await db.from("customers").update({ name }).eq("id", found.id); // 補上姓名
@@ -409,6 +418,10 @@
         alert("請輸入車主姓名或電話");
         return;
       }
+      const warnings = [];
+      checkPhone(phone, warnings);
+      if (!confirmChecks([], warnings)) return;
+
       const customerId = await findOrCreateCustomer(name, phone);
       if (!customerId) return;
 
@@ -425,6 +438,16 @@
       const plate = document.getElementById("newPlate").textContent;
       const ownerName = document.getElementById("ownerName").value.trim();
       const ownerPhone = document.getElementById("ownerPhone").value.trim();
+
+      // 存檔前檢查：車牌、年份、里程、電話合不合理
+      const ok = checkBike({
+        plate,
+        year: Number(document.getElementById("year").value) || null,
+        km: Number(document.getElementById("bikeKm").value) || null,
+        phone: ownerPhone
+      });
+      if (!ok) return;
+
       let customerId = null;
 
       // 有填車主：電話已經存在就用那位客戶，沒有才新增
@@ -485,6 +508,7 @@
         alert("讀取工單失敗：" + error.message);
         return;
       }
+      currentRecords = data; // 記下來，新增或修改工單時拿來比對里程
 
       const list = document.getElementById("records");
       list.innerHTML = "";
@@ -540,6 +564,17 @@
         alert("請填寫維修項目");
         return;
       }
+
+      // 存檔前檢查：里程、日期、金額合不合理
+      const ok = checkRecord({
+        date: document.getElementById("rDate").value,
+        km,
+        amount: Number(document.getElementById("rAmount").value) || 0,
+        nextKm: Number(document.getElementById("rNext").value) || null,
+        status: document.getElementById("rStatus").value,
+        items
+      });
+      if (!ok) return;
 
       const { error } = await db.from("service_records").insert({
         bike_id: currentBike.id,
@@ -760,6 +795,14 @@
         alert("請填寫維修項目");
         return;
       }
+      const ok = checkRecord({
+        date: document.getElementById("eDate").value,
+        km,
+        amount: Number(document.getElementById("eAmount").value) || 0,
+        nextKm: Number(document.getElementById("eNext").value) || null,
+        items
+      }, editingId);
+      if (!ok) return;
 
       // ③ 更新資料庫：只改 id 等於這張工單的那一筆
       const { error } = await db.from("service_records").update({
@@ -891,6 +934,21 @@
         alert("車牌和姓名至少填一個");
         return;
       }
+
+      // 存檔前檢查：日期是不是已經過了、電話格式、同一天是不是已經約過
+      const warnings = [];
+      if (date < today()) warnings.push(`預約日期 ${date} 已經過了`);
+      checkPhone(document.getElementById("aPhone").value, warnings);
+      if (plate) {
+        const { data: same } = await db
+          .from("appointments")
+          .select("id")
+          .eq("plate", plate)
+          .eq("date", date)
+          .eq("status", "預約中");
+        if (same && same.length) warnings.push(`${plate} 在 ${date} 已經有預約了，是不是重複新增？`);
+      }
+      if (!confirmChecks([], warnings)) return;
 
       const { error } = await db.from("appointments").insert({
         date,
@@ -1116,6 +1174,93 @@
       window[name] = locked(window[name]);
     });
     
+    // ===== 輸入檢查：存檔前先看看資料合不合理 =====
+    // errors（錯誤）：一定不能存，例如金額是負數
+    // warnings（提醒）：可能打錯，先問一下，按「確定」還是可以存
+
+    let currentRecords = []; // 目前這台車的工單（loadRecords 讀進來的）
+
+    // 統一處理檢查結果：有錯誤就擋下來，有提醒就問一下
+    function confirmChecks(errors, warnings) {
+      if (errors.length) {
+        alert(errors.join("；"));
+        return false;
+      }
+      if (warnings.length) {
+        return confirm("請確認以下資料：\n\n• " + warnings.join("\n• ") + "\n\n確定要儲存嗎？");
+      }
+      return true;
+    }
+
+    // 電話：台灣手機（09 開頭 10 碼）或市話（0 開頭 9～10 碼）
+    function checkPhone(phone, warnings) {
+      const d = (phone || "").replace(/\D/g, "");
+      if (!d) return;
+      const mobile = /^09\d{8}$/.test(d);
+      const landline = /^0[2-8]\d{7,8}$/.test(d);
+      if (!mobile && !landline) warnings.push(`電話「${phone}」看起來不像台灣的手機或市話號碼`);
+    }
+
+    // 新車建檔：車牌、年份、里程、電話
+    function checkBike({ plate, year, km, phone }) {
+      const errors = [], warnings = [];
+      const thisYear = new Date().getFullYear();
+
+      if (!/^[A-Z0-9]{4,8}$/.test(plate) || !/[A-Z]/.test(plate) || !/[0-9]/.test(plate)) {
+        warnings.push(`車牌「${plate}」看起來不像台灣的車牌（通常是英文加數字）`);
+      }
+      if (year && (year < 1950 || year > thisYear + 1)) errors.push(`年份 ${year} 不合理`);
+      if (km !== null && km < 0) errors.push("里程不能是負數");
+      if (km > 300000) warnings.push(`里程 ${km.toLocaleString()} 公里很高，是不是多打了一個 0？`);
+      checkPhone(phone, warnings);
+      return confirmChecks(errors, warnings);
+    }
+
+    // 工單：里程、日期、金額、下次保養里程、重複開單
+    // editingId：編輯工單時傳入這張工單的編號，比對時要把它自己排除
+    function checkRecord({ date, km, amount, nextKm, status, items }, editingId = null) {
+      const errors = [], warnings = [];
+
+      if (amount < 0) errors.push("金額不能是負數");
+      if (km !== null && km < 0) errors.push("里程不能是負數");
+      if (date && date > today()) warnings.push(`日期 ${date} 是未來的日子`);
+
+      if (km) {
+        // 同一台車的其他工單，分成「這次之前」和「這次之後」
+        const others = currentRecords.filter(r => r.id !== editingId && r.mileage && r.date);
+        const before = others.filter(r => !date || r.date <= date);
+        const after = others.filter(r => date && r.date > date);
+
+        // 之前的紀錄裡最大的里程（如果這是最新的一筆，也要跟車輛目前的里程比）
+        let maxBefore = Math.max(0, ...before.map(r => r.mileage));
+        if (!after.length && !editingId) maxBefore = Math.max(maxBefore, currentBike.mileage || 0);
+        // 之後的紀錄裡最小的里程
+        const minAfter = Math.min(Infinity, ...after.map(r => r.mileage));
+
+        if (km < maxBefore) {
+          warnings.push(`里程 ${km.toLocaleString()} 公里比之前的紀錄（${maxBefore.toLocaleString()} 公里）還少，里程應該只會增加`);
+        }
+        if (km > minAfter) {
+          warnings.push(`里程 ${km.toLocaleString()} 公里比之後日期的紀錄（${minAfter.toLocaleString()} 公里）還多`);
+        }
+        if (maxBefore && km - maxBefore > 30000) {
+          warnings.push(`里程比上一次多了 ${(km - maxBefore).toLocaleString()} 公里，是不是多打了一個 0？`);
+        }
+      }
+
+      if (nextKm && km && nextKm <= km) {
+        warnings.push(`下次保養里程（${nextKm.toLocaleString()}）沒有比這次的里程（${km.toLocaleString()}）多`);
+      }
+      if (status === "已完成" && !amount) {
+        warnings.push("狀態是「已完成」但金額是 0，今日營收不會算到這筆");
+      }
+      if (date && items) {
+        const dup = currentRecords.find(r => r.id !== editingId && r.date === date && r.items === items);
+        if (dup) warnings.push(`${date} 已經有一張「${items}」的工單了，是不是重複新增？`);
+      }
+      return confirmChecks(errors, warnings);
+    }
+
     async function logout() {
       await db.auth.signOut();
       location.href = "index.html";

@@ -4,6 +4,10 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>車輛總覽 - 竹北榮詮管理系統</title>
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#111827">
+  <link rel="icon" href="icon-192.png">
+  <link rel="apple-touch-icon" href="icon-180.png">
   <link rel="stylesheet" href="style.css">
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
@@ -135,11 +139,24 @@
         .reduce((sum, r) => sum + (r.total || 0), 0);
     }
 
+    // Supabase 一次最多只給 1000 筆，這裡一頁一頁拿，直到拿完為止
+    async function fetchAll(makeQuery) {
+      const size = 1000;
+      let all = [];
+      for (let from = 0; ; from += size) {
+        const { data, error } = await makeQuery().range(from, from + size - 1);
+        if (error) return { data: null, error };
+        all = all.concat(data);
+        if (data.length < size) return { data: all, error: null }; // 這頁不滿 1000 筆，代表拿完了
+      }
+    }
+
     // 一次讀出：所有車輛 + 車主 + 每台車的工單
     async function loadData() {
-      const { data, error } = await db
+      const { data, error } = await fetchAll(() => db
         .from("bikes")
-        .select("*, customers(name, phone), service_records(id, date, items, total, status, completed_at)");
+        .select("*, customers(name, phone), service_records(id, date, items, total, status, completed_at)")
+        .order("id"));
       if (error) {
         alert("讀取失敗：" + error.message);
         return;

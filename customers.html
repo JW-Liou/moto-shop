@@ -4,6 +4,10 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>客戶查詢 - 竹北榮詮管理系統</title>
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#111827">
+  <link rel="icon" href="icon-192.png">
+  <link rel="apple-touch-icon" href="icon-180.png">
   <link rel="stylesheet" href="style.css">
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="config.js"></script>
@@ -31,8 +35,6 @@
   </main>
 
   <script>
-    let customers = null; // 第一次查詢時從資料庫讀進來，之後直接用
-
     // 小工具：建立一個元素，順便設定 class 和文字
     function el(tag, className, text) {
       const e = document.createElement(tag);
@@ -51,18 +53,11 @@
       return (phone || "").replace(/\D/g, "");
     }
 
-    // 讀出所有客戶，連同他們的車和每台車的工單
-    async function loadCustomers() {
-      const { data, error } = await db
-        .from("customers")
-        .select("*, bikes(id, plate, model, mileage, service_records(date, total))");
-      if (error) {
-        alert("讀取客戶失敗：" + error.message);
-        return null;
-      }
-      return data;
-    }
+    // 查客戶時要一起帶出來的資料：名下的車，以及每台車的工單
+    const CUSTOMER_FIELDS = "*, bikes(id, plate, model, mileage, service_records(date, total))";
 
+    // 每次查詢都直接請資料庫幫忙找，不用把全部客戶抓回來
+    // （Supabase 一次最多只給 1000 筆，客戶多了以後全部抓會漏資料）
     async function searchCustomer() {
       const q = document.getElementById("q").value.trim();
       const msg = document.getElementById("msg");
@@ -72,29 +67,42 @@
         msg.textContent = "請輸入電話、車牌或姓名";
         return;
       }
-
       msg.textContent = "查詢中...";
-      if (!customers) customers = await loadCustomers();
-      if (!customers) return;
 
       // 判斷輸入的是什麼：
       // 有英文字母 → 車牌；只有數字和 - → 電話；其他（中文）→ 姓名
-      let mode, matches;
+      let mode, query;
       if (/[A-Za-z]/.test(q)) {
         mode = "車牌";
-        const key = normalizePlate(q);
-        matches = customers.filter(c => c.bikes.some(b => b.plate.includes(key)));
+        // 先找車牌符合的車，再用車主編號找客戶
+        const { data: bikes, error } = await db
+          .from("bikes")
+          .select("customer_id")
+          .ilike("plate", `%${normalizePlate(q)}%`)
+          .not("customer_id", "is", null)
+          .limit(50);
+        if (error) {
+          msg.textContent = "查詢失敗：" + error.message;
+          return;
+        }
+        const ids = [...new Set(bikes.map(b => b.customer_id))];
+        query = db.from("customers").select(CUSTOMER_FIELDS).in("id", ids);
       } else if (/^[\d\s\-()+]+$/.test(q)) {
         mode = "電話";
-        const key = phoneDigits(q);
-        matches = customers.filter(c => phoneDigits(c.phone).includes(key));
+        query = db.from("customers").select(CUSTOMER_FIELDS).ilike("phone_digits", `%${phoneDigits(q)}%`);
       } else {
         mode = "姓名";
-        matches = customers.filter(c => (c.name || "").includes(q));
+        query = db.from("customers").select(CUSTOMER_FIELDS).ilike("name", `%${q}%`);
+      }
+
+      const { data: matches, error } = await query.limit(50);
+      if (error) {
+        msg.textContent = "查詢失敗：" + error.message;
+        return;
       }
 
       msg.textContent = matches.length
-        ? `用${mode}找到 ${matches.length} 位客戶`
+        ? `用${mode}找到 ${matches.length} 位客戶` + (matches.length === 50 ? "（只顯示前 50 位，可以打得更完整一點）" : "")
         : `用${mode}找不到客戶`;
       matches.forEach(c => results.appendChild(customerCard(c)));
 
@@ -104,7 +112,8 @@
           .from("bikes")
           .select("plate, model")
           .is("customer_id", null)
-          .ilike("plate", `%${normalizePlate(q)}%`);
+          .ilike("plate", `%${normalizePlate(q)}%`)
+          .limit(50);
         if (noOwner && noOwner.length) results.appendChild(noOwnerCard(noOwner));
       }
     }

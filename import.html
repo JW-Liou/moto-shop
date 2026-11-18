@@ -4,6 +4,10 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>匯入 Excel - 竹北榮詮管理系統</title>
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#111827">
+  <link rel="icon" href="icon-192.png">
+  <link rel="apple-touch-icon" href="icon-180.png">
   <link rel="stylesheet" href="style.css">
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
@@ -11,7 +15,7 @@
 </head>
 <body>
   <header class="topbar">
-    <div class="brand">竹北榮詮<span>管理系統</span></div>
+    <a class="brand" href="app.html">竹北榮詮<span>管理系統</span></a>
     <div class="user">
       <button class="btn-ghost" onclick="location.href='app.html'">回系統</button>
     </div>
