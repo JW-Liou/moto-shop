@@ -118,8 +118,13 @@
         </div>
       </div>
 
-      <h3>待處理工單</h3>
-      <ul class="list" id="pendingList"></ul>
+      <!-- 分頁：待修／維修中／今日完成 -->
+      <div class="tabs" id="boardTabs">
+        <button data-tab="todo" class="active">待修 <span id="cnt-todo">0</span></button>
+        <button data-tab="doing">維修中 <span id="cnt-doing">0</span></button>
+        <button data-tab="done">今日完成 <span id="cnt-done">0</span></button>
+      </div>
+      <ul class="list board-list" id="boardList"></ul>
     </section>
 
     <!-- 右邊：其他功能（之後的新功能放這裡） -->
@@ -415,8 +420,10 @@
       });
     }
 
+    // 改狀態；改成「已完成」時順便記下完成時間，「今日完成」就是靠這個算的
     async function updateStatus(id, status) {
-      const { error } = await db.from("service_records").update({ status }).eq("id", id);
+      const completed_at = status === "已完成" ? new Date().toISOString() : null;
+      const { error } = await db.from("service_records").update({ status, completed_at }).eq("id", id);
       if (error) {
         alert("更新失敗：" + error.message);
         return;
@@ -441,7 +448,8 @@
         parts: document.getElementById("rParts").value.trim(),
         total: Number(document.getElementById("rAmount").value) || 0,
         next_service_km: Number(document.getElementById("rNext").value) || null,
-        status: document.getElementById("rStatus").value
+        status: document.getElementById("rStatus").value,
+        completed_at: document.getElementById("rStatus").value === "已完成" ? new Date().toISOString() : null
       });
       if (error) {
         alert("新增失敗：" + error.message);
@@ -463,6 +471,22 @@
     }
 
     // 工作看板：今日統計、待處理工單
+        // ===== 工作看板 =====
+    let boardTab = "todo";                       // 目前選的分頁
+    let board = { todo: [], doing: [], done: [] }; // 三個分頁的工單
+
+    // 分頁按鈕：按了就切換
+    function setupBoardTabs() {
+      document.querySelectorAll("#boardTabs button").forEach(btn => {
+        btn.onclick = () => {
+          boardTab = btn.dataset.tab;
+          document.querySelectorAll("#boardTabs button").forEach(b => b.classList.toggle("active", b === btn));
+          renderBoard();
+        };
+      });
+    }
+
+    // 讀資料：今日統計、還沒完成的工單、今天完成的工單
     async function loadDashboard() {
       // 1. 今天的來客數和營收
       const { data: todayRecords, error: e1 } = await db
@@ -479,7 +503,7 @@
       document.getElementById("statCount").textContent = visitors;
       document.getElementById("statIncome").textContent = `$${income.toLocaleString()}`;
 
-      // 2. 還沒完成的工單（順便抓車牌）
+      // 2. 還沒完成的工單（待修＋維修中）
       const { data: pending, error: e2 } = await db
         .from("service_records")
         .select("*, bikes(plate, model)")
@@ -490,41 +514,70 @@
         return;
       }
 
-      const pendingList = document.getElementById("pendingList");
-      pendingList.innerHTML = "";
-      if (pending.length === 0) {
-        pendingList.appendChild(
-          el("li", "empty", "目前沒有待處理工單。查詢車牌 → 新增工單，狀態選「待修」或「維修中」，就會出現在這裡。")
-        );
+      // 3. 今天完成的工單（從今天 00:00 開始算）
+      const startOfToday = new Date();
+      startOfToday.setHours(0, 0, 0, 0);
+      const { data: done, error: e3 } = await db
+        .from("service_records")
+        .select("*, bikes(plate, model)")
+        .eq("status", "已完成")
+        .gte("completed_at", startOfToday.toISOString())
+        .order("completed_at", { ascending: false });
+      if (e3) {
+        alert("讀取今日完成失敗：" + e3.message);
+        return;
       }
-      pending.forEach(r => {
-        const li = el("li");
 
+      board = {
+        todo: pending.filter(r => r.status === "待修"),
+        doing: pending.filter(r => r.status === "維修中"),
+        done
+      };
+      document.getElementById("cnt-todo").textContent = board.todo.length;
+      document.getElementById("cnt-doing").textContent = board.doing.length;
+      document.getElementById("cnt-done").textContent = board.done.length;
+      renderBoard();
+    }
+
+    // 顯示目前分頁的工單
+    function renderBoard() {
+      const ul = document.getElementById("boardList");
+      ul.innerHTML = "";
+      const list = board[boardTab];
+
+      if (list.length === 0) {
+        const emptyText = {
+          todo: "沒有待修的車。查詢車牌 → 新增工單，狀態選「待修」就會出現在這裡。",
+          doing: "目前沒有維修中的車。",
+          done: "今天還沒有完成的工單。"
+        };
+        ul.appendChild(el("li", "empty", emptyText[boardTab]));
+        return;
+      }
+
+      list.forEach(r => {
         const main = el("div", "main");
-        main.append(
-          el("div", "", r.items),
-          el("div", "sub", `${r.bikes.model || "未填車型"}｜${r.date}`)
-        );
+        // 今日完成：顯示完成時間和金額；其他：顯示車型和日期
+        const sub = boardTab === "done"
+          ? `${new Date(r.completed_at).toLocaleTimeString("zh-TW", { hour: "2-digit", minute: "2-digit", hour12: false })} 完成｜$${(r.total || 0).toLocaleString()}`
+          : `${r.bikes.model || "未填車型"}｜${r.date || "日期不明"}`;
+        main.append(el("div", "", r.items), el("div", "sub", sub));
 
         const openBtn = el("button", "btn-small", "打開");
         openBtn.onclick = () => openPlate(r.bikes.plate);
 
-        li.append(
-          el("span", "badge " + STATUS_CLASS[r.status], r.status),
-          el("span", "plate", r.bikes.plate),
-          main,
-          openBtn
-        );
-        pendingList.appendChild(li);
+        const li = el("li");
+        li.append(el("span", "plate", r.bikes.plate), main, openBtn);
+        ul.appendChild(li);
       });
     }
-
+    
     async function logout() {
       await db.auth.signOut();
       location.href = "index.html";
     }
 
-    setupQuickItems();
+    setupBoardTabs();
     showRecent();
     checkLogin();
   </script>
