@@ -8,9 +8,13 @@
   <meta name="theme-color" content="#111827">
   <link rel="icon" href="icon-192.png">
   <link rel="apple-touch-icon" href="icon-180.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700;900&display=swap">
   <link rel="stylesheet" href="style.css">
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="config.js"></script>
+  <script src="ui.js" defer></script>
 </head>
 <body>
   <!-- 上方標題列 -->
@@ -21,6 +25,7 @@
       <button class="btn-ghost" onclick="openRevenue()" title="今日營收">＄</button>
       <button class="btn-ghost" onclick="location.href='customers.html'">客戶查詢</button>
       <button class="btn-ghost" onclick="location.href='bikes.html'">車輛總覽</button>
+      <button class="btn-ghost" onclick="location.href='analytics.html'">數據分析</button>
       <button class="btn-ghost" onclick="location.href='import.html'">匯入／備份</button>
       <button class="btn-ghost" onclick="logout()">登出</button>
     </div>

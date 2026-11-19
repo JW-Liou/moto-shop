@@ -8,15 +8,23 @@
   <meta name="theme-color" content="#111827">
   <link rel="icon" href="icon-192.png">
   <link rel="apple-touch-icon" href="icon-180.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700;900&display=swap">
   <link rel="stylesheet" href="style.css">
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="config.js"></script>
+  <script src="ui.js" defer></script>
 </head>
 <body>
   <header class="topbar">
     <a class="brand" href="app.html">竹北榮詮<span>管理系統</span></a>
     <div class="user">
-      <button class="btn-ghost" onclick="location.href='app.html'">回系統</button>
+      <button class="btn-ghost" onclick="location.href='app.html'">主畫面</button>
+      <button class="btn-ghost" onclick="location.href='customers.html'">客戶查詢</button>
+      <button class="btn-ghost" onclick="location.href='bikes.html'">車輛總覽</button>
+      <button class="btn-ghost" onclick="location.href='analytics.html'">數據分析</button>
+      <button class="btn-ghost" onclick="location.href='import.html'">匯入／備份</button>
     </div>
   </header>
 
