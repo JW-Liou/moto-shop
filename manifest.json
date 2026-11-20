@@ -1,6 +1,6 @@
 {
-  "name": "竹北榮詮管理系統",
-  "short_name": "榮詮車行",
+  "name": "竹北榮詮管理系統（學習版）",
+  "short_name": "榮詮學習版",
   "description": "機車行的車輛、工單與預約管理",
   "start_url": "./app.html",
   "scope": "./",
