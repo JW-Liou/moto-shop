@@ -649,3 +649,20 @@ body.hide-money .money-shape { opacity: 0.35; }
   *, *::before, *::after { animation: none !important; transition: none !important; }
   .svg-chart .draw { stroke-dashoffset: 0; }
 }
+
+
+/* =====================================================================
+   ===== 來客名單、垃圾桶、操作紀錄 =====
+   ===================================================================== */
+.modal-box.modal-wide { max-width: 720px; }
+#visitFilter { margin: 4px 0 8px; }
+.visit-day { margin: 18px 0 4px; font-size: 15px; color: #1f2937; position: sticky; top: -20px; background: #fff; padding: 6px 0; z-index: 1; }
+.visit-list li { align-items: center; }
+.clickable-row { cursor: pointer; }
+@media (hover: hover) { .clickable-row:hover { background: #fff7ed !important; } }
+.visit-phone { text-decoration: underline dotted; text-underline-offset: 3px; }
+.log-type { width: auto; padding: 6px 10px; font-size: 14px; }
+.log-diff { font-size: 14px; color: #1f2937; background: #f3f4f6; border-radius: 6px; padding: 3px 8px; margin: 3px 0; display: inline-block; }
+#trashList li, #logList li { align-items: center; }
+#trashList .badge, #logList .badge { flex: none; }
+.card-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }

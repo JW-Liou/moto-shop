@@ -140,6 +140,12 @@
       return `$${(n || 0).toLocaleString()}`;
     }
 
+    // 營收算在「完成的那一天」（跟主畫面的 ＄、數據分析一樣）
+    // 舊 Excel 匯入的工單沒有完成時間，就用開單日期
+    function revDate(r) {
+      return r.completed_at ? new Date(r.completed_at).toLocaleDateString("sv-SE") : r.date;
+    }
+
     // 已完成工單的金額加總（營收只算已完成的）
     function sumDone(records) {
       return records
@@ -205,7 +211,7 @@
       document.getElementById("sBikes").textContent = bikes.length;
       document.getElementById("sRecords").textContent = allRecords.length;
       document.getElementById("sMonth").textContent = month.length;
-      document.getElementById("sIncome").textContent = money(sumDone(month));
+      document.getElementById("sIncome").textContent = money(sumDone(allRecords.filter(r => (revDate(r) || "").startsWith(thisMonth()))));
 
       // 熱門項目：把「換機油、齒輪油」拆成兩個項目來數
       const itemCount = {};
@@ -316,7 +322,9 @@
     // ===== 營收明細 =====
     function renderRevenue() {
       const m = document.getElementById("revMonth").value || thisMonth();
-      const done = allRecords.filter(r => r.status === "已完成" && r.date && r.date.startsWith(m));
+      const done = allRecords
+        .filter(r => r.status === "已完成" && (revDate(r) || "").startsWith(m))
+        .sort((a, b) => (revDate(b) || "").localeCompare(revDate(a) || ""));
 
       document.getElementById("revTotal").textContent = money(sumDone(done));
       document.getElementById("revCount").textContent = done.length;
@@ -324,10 +332,11 @@
       // 1. 每日營收：把同一天的工單加在一起
       const byDay = {};
       done.forEach(r => {
-        if (!byDay[r.date]) byDay[r.date] = { income: 0, orders: 0, bikes: new Set() };
-        byDay[r.date].income += r.total || 0;
-        byDay[r.date].orders += 1;
-        byDay[r.date].bikes.add(r.plate);
+        const d = revDate(r);
+        if (!byDay[d]) byDay[d] = { income: 0, orders: 0, bikes: new Set() };
+        byDay[d].income += r.total || 0;
+        byDay[d].orders += 1;
+        byDay[d].bikes.add(r.plate);
       });
       const days = Object.keys(byDay).sort().reverse(); // 新的日期排前面
       const max = Math.max(1, ...days.map(d => byDay[d].income));
@@ -355,7 +364,8 @@
       if (done.length === 0) ul.appendChild(el("li", "empty", "沒有資料"));
       done.forEach(r => {
         const main = el("div", "main");
-        main.append(el("div", "", r.items), el("div", "sub", `${r.date}｜${r.model || "未填車型"}`));
+        const finished = revDate(r) !== r.date ? `${revDate(r)} 完成（${r.date} 開單）` : r.date;
+        main.append(el("div", "", r.items), el("div", "sub", `${finished}｜${r.model || "未填車型"}`));
         const li = el("li");
         li.append(el("span", "plate", r.plate), main, el("div", "money", money(r.total)), openButton(r.plate));
         ul.appendChild(li);

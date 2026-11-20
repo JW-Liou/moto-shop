@@ -62,7 +62,7 @@
     }
 
     // 查客戶時要一起帶出來的資料：名下的車，以及每台車的工單
-    const CUSTOMER_FIELDS = "*, bikes(id, plate, model, mileage, service_records(date, total))";
+    const CUSTOMER_FIELDS = "*, bikes(id, plate, model, mileage, service_records(date, total, status))";
 
     // 每次查詢都直接請資料庫幫忙找，不用把全部客戶抓回來
     // （Supabase 一次最多只給 1000 筆，客戶多了以後全部抓會漏資料）
@@ -135,7 +135,8 @@
 
       // 統計：幾台車、來店幾次、累計消費、最後一次來
       const records = c.bikes.flatMap(b => b.service_records || []);
-      const spend = records.reduce((sum, r) => sum + (r.total || 0), 0);
+      // 累計消費只算已完成的工單（跟營收算法一樣）
+      const spend = records.filter(r => r.status === "已完成").reduce((sum, r) => sum + (r.total || 0), 0);
       const dates = records.map(r => r.date).filter(Boolean).sort();
       const stats = el("div", "mini-stats");
       stats.append(

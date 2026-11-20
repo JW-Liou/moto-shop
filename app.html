@@ -54,7 +54,7 @@
         <h3>車輛資料</h3>
         <div class="form-grid">
           <label>車型 <small>選填</small><input id="model" placeholder="例如：勁戰六代"></label>
-          <label>年份 <small>選填</small><input type="number" id="year"></label>
+          <label>年份 <small>選填</small><input type="number" id="year" onchange="rocToAD(this)"></label>
           <label>目前里程（公里）<small>選填</small><input type="number" id="bikeKm"></label>
         </div>
         <h3>車主資料</h3>
@@ -119,13 +119,13 @@
     <section class="card sidebar">
       <h2>工作看板</h2>
       <div class="stats">
-        <div class="stat">
+        <div class="stat clickable" onclick="openVisitors('today')" title="點一下看今天的來客名單">
           <div class="num" id="statCount">0</div>
-          <div class="label">今日來客</div>
+          <div class="label">今日來客 ›</div>
         </div>
-        <div class="stat">
+        <div class="stat clickable" onclick="openVisitors('month')" title="點一下看這個月的來客名單">
           <div class="num" id="statMonth">0</div>
-          <div class="label">本月來客</div>
+          <div class="label">本月來客 ›</div>
         </div>
       </div>
 
@@ -233,6 +233,20 @@
       <h3>已完成的消費紀錄</h3>
       <ul class="list" id="revList"></ul>
       <p class="info">1 分鐘後會自動關閉，也可以按 Esc 或點旁邊的空白處關閉。</p>
+    </div>
+  </div>
+
+  <!-- 來客名單：點工作看板的「今日來客」「本月來客」打開 -->
+  <div class="modal" id="visitModal" hidden onclick="if (event.target === this) closeVisitors()">
+    <div class="modal-box modal-wide">
+      <div class="modal-head">
+        <h2 id="visitTitle">今日來客</h2>
+        <button class="btn-small" onclick="closeVisitors()">關閉</button>
+      </div>
+      <p class="info" id="visitSub">讀取中…</p>
+      <input id="visitFilter" placeholder="搜尋車牌、車型、車主、項目" oninput="renderVisitors()">
+      <div id="visitList"></div>
+      <p class="info">點一下那台車，就會打開它的資料；電話點一下才會顯示完整號碼。</p>
     </div>
   </div>
 
@@ -770,6 +784,7 @@
         closeRevenue();
         closeEdit();
         closeAppt();
+        closeVisitors();
       }
     });
         // ===== 編輯、刪除工單 =====
@@ -842,13 +857,14 @@
 
     // 刪除工單：先確認，再刪
     async function deleteRecord(id) {
-      if (!confirm("確定要刪除這張工單嗎？刪除後無法復原。")) return;
+      if (!confirm("確定要刪除這張工單嗎？\n\n刪錯了可以在 180 天內，到「匯入／備份」最下面的垃圾桶救回。")) return;
 
       const { error } = await db.from("service_records").delete().eq("id", id);
       if (error) {
         alert("刪除失敗：" + error.message);
         return;
       }
+      toast("已刪除。刪錯了可以到「匯入／備份」的垃圾桶救回", "ok");
       showBike();
       loadDashboard();
     }
@@ -1133,6 +1149,154 @@
       await db.from("notes").delete().eq("done", true);
       loadNotes();
     }
+    // ===== 來客名單 =====
+    // 「一位來客」＝同一台車同一天（跟工作看板的算法一樣），一位來客可能開了好幾張工單
+    let visits = [];
+    let visitMode = "today";
+
+    async function openVisitors(mode) {
+      visitMode = mode;
+      document.getElementById("visitModal").hidden = false;
+      document.getElementById("visitTitle").textContent = mode === "today" ? "今日來客" : "本月來客";
+      document.getElementById("visitSub").textContent = "讀取中…";
+      document.getElementById("visitFilter").value = "";
+      document.getElementById("visitList").innerHTML = "";
+
+      const start = mode === "today" ? today() : today().slice(0, 7) + "-01";
+      let rows = [];
+      // Supabase 一次最多給 1000 筆，一頁一頁拿
+      for (let from = 0; ; from += 1000) {
+        const { data, error } = await db
+          .from("service_records")
+          .select("id, bike_id, date, items, status, mileage, created_at, bikes(plate, model, customers(name, phone))")
+          .gte("date", start)
+          .lte("date", today())
+          .order("date", { ascending: false })
+          .order("id", { ascending: false })
+          .range(from, from + 999);
+        if (error) {
+          alert("讀取來客名單失敗：" + error.message);
+          return;
+        }
+        rows = rows.concat(data);
+        if (data.length < 1000) break;
+      }
+
+      // 合併成「一台車一天一筆」
+      const map = new Map();
+      rows.forEach(r => {
+        const key = r.bike_id + "|" + r.date;
+        if (!map.has(key)) map.set(key, { bikeId: r.bike_id, date: r.date, bike: r.bikes || {}, orders: [] });
+        map.get(key).orders.push(r);
+      });
+      visits = [...map.values()];
+
+      // 這個月第幾次來
+      const seen = {};
+      [...visits].reverse().forEach(v => {
+        seen[v.bikeId] = (seen[v.bikeId] || 0) + 1;
+        v.nth = seen[v.bikeId];
+      });
+      renderVisitors();
+    }
+
+    function renderVisitors() {
+      const box = document.getElementById("visitList");
+      const keyword = document.getElementById("visitFilter").value.trim().toUpperCase();
+      box.innerHTML = "";
+
+      const list = visits.filter(v => {
+        if (!keyword) return true;
+        const owner = v.bike.customers || {};
+        const text = [v.bike.plate, v.bike.model, owner.name, ...v.orders.map(o => o.items)].join(" ").toUpperCase();
+        return text.includes(keyword) || text.replace(/[^A-Z0-9]/g, "").includes(keyword.replace(/[^A-Z0-9]/g, ""));
+      });
+
+      const bikes = new Set(visits.map(v => v.bikeId)).size;
+      const orders = visits.reduce((s, v) => s + v.orders.length, 0);
+      document.getElementById("visitSub").textContent = visitMode === "today"
+        ? `今天 ${visits.length} 位來客，開了 ${orders} 張工單`
+        : `這個月 ${visits.length} 位來客（${bikes} 台不同的車），開了 ${orders} 張工單`;
+
+      if (list.length === 0) {
+        box.appendChild(el("p", "empty", visits.length ? "找不到符合的來客" : "還沒有來客"));
+        return;
+      }
+
+      // 本月：照日期分組；今天：只有一組
+      const byDate = new Map();
+      list.forEach(v => {
+        if (!byDate.has(v.date)) byDate.set(v.date, []);
+        byDate.get(v.date).push(v);
+      });
+      byDate.forEach((items, date) => {
+        if (visitMode === "month") {
+          const week = "日一二三四五六"[new Date(date + "T00:00").getDay()];
+          box.appendChild(el("h3", "visit-day", `${date.slice(5).replace("-", "/")}（${week}）　${items.length} 位`));
+        }
+        const ul = el("ul", "list visit-list");
+        items.forEach(v => ul.appendChild(visitItem(v)));
+        box.appendChild(ul);
+      });
+    }
+
+    // 一位來客的一行
+    function visitItem(v) {
+      const owner = v.bike.customers;
+      const li = el("li", "clickable-row");
+      li.title = "點一下打開這台車";
+      li.onclick = () => {
+        closeVisitors();
+        openPlate(v.bike.plate);
+      };
+
+      // 第一行：做了哪些項目（同一天開好幾張單就合在一起）
+      const items = [...new Set(v.orders.flatMap(o => (o.items || "").split("、")).filter(Boolean))].join("、");
+      const main = el("div", "main");
+      main.append(el("div", "", items || "（未填項目）"));
+
+      // 第二行：時間、車型、車主、電話（遮起來）、第幾次來
+      const first = [...v.orders].sort((a, b) => (a.created_at || "").localeCompare(b.created_at || ""))[0];
+      const opened = first.created_at && new Date(first.created_at).toLocaleDateString("sv-SE") === v.date
+        ? new Date(first.created_at).toLocaleTimeString("zh-TW", { hour: "2-digit", minute: "2-digit", hour12: false }) + " 進來"
+        : "";
+      const sub = el("div", "sub");
+      const parts = [opened, v.bike.model || "未填車型", owner ? owner.name : "未登記車主"].filter(Boolean);
+      sub.append(parts.join("｜"));
+      if (owner && owner.phone) {
+        const phone = el("span", "reveal visit-phone", "｜" + maskPhone(owner.phone));
+        phone.title = "點一下顯示完整電話";
+        phone.onclick = e => {
+          e.stopPropagation(); // 只換電話，不要打開車輛
+          phone.textContent = phone.textContent.includes("*") ? "｜" + owner.phone : "｜" + maskPhone(owner.phone);
+        };
+        sub.append(phone);
+      }
+      if (visitMode === "month" && v.nth > 1) sub.append(`｜本月第 ${v.nth} 次`);
+      if (v.orders.length > 1) sub.append(`｜${v.orders.length} 張工單`);
+      main.append(sub);
+
+      // 右邊：狀態（有一張還沒好，就顯示那個狀態）
+      const order = ["待修", "維修中", "已完成"];
+      const status = order.find(s => v.orders.some(o => o.status === s)) || "已完成";
+      li.append(el("span", "plate", v.bike.plate || "?"), main, el("span", "badge " + STATUS_CLASS[status], status));
+      return li;
+    }
+
+    function closeVisitors() {
+      document.getElementById("visitModal").hidden = true;
+    }
+
+    // ===== 年份：打民國年自動換成西元 =====
+    // 例如打 112 → 2023（1～200 都當成民國年）
+    function rocToAD(input) {
+      const v = Number(input.value);
+      if (Number.isInteger(v) && v >= 1 && v <= 200) {
+        input.value = v + 1911;
+        toast(`已把民國 ${v} 年換成西元 ${v + 1911} 年`, "ok");
+      }
+    }
+
     // ===== 電話遮罩 =====
     // 只露出前 4 碼和後 3 碼，例如 0912345678 → 0912-***-678
     function maskPhone(phone) {

@@ -298,11 +298,14 @@
       const r = getRange(period);
       const pr = prevRange(r);
       const cur = compute(r);
-      const prev = pr ? compute(pr) : null;
+      // 前一段期間比最早的資料還早，比較起來沒有意義（例如資料從去年 11 月才開始）
+      const firstDate = records.map(x => x.date).filter(Boolean).sort()[0];
+      const partial = pr && firstDate && pr.start < firstDate;
+      const prev = pr && !partial ? compute(pr) : null;
       const days = dayDiff(r.start, r.end) + 1;
-      $("rangeText").textContent = `${r.label}：${r.start} ～ ${r.end}（${days} 天）` + (pr ? `，與前一段 ${pr.start} ～ ${pr.end} 比較` : "");
+      $("rangeText").textContent = `${r.label}：${r.start} ～ ${r.end}（${days} 天）` + (pr && !partial ? `，與前一段 ${pr.start} ～ ${pr.end} 比較` : pr ? "（前一段期間的資料不足，不做比較）" : "");
 
-      renderKpis(cur, prev, days);
+      renderKpis(cur, prev, days, partial);
       renderTrend(r, cur);
       renderWeek(r, cur);
       renderHour(cur);
@@ -315,7 +318,7 @@
     }
 
     // ----- 重點數字 -----
-    function renderKpis(cur, prev, days) {
+    function renderKpis(cur, prev, days, partial) {
       const box = $("kpis");
       box.innerHTML = "";
       const items = [
@@ -342,6 +345,8 @@
           card.append(d);
         } else if (k.prev != null) {
           card.append(el("div", "kpi-delta flat", "前期無資料"));
+        } else if (partial) {
+          card.append(el("div", "kpi-delta flat", "前期資料不足"));
         }
         box.append(card);
       });
